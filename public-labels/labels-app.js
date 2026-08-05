@@ -1,3 +1,14 @@
+function localDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+const historyToday = new Date();
+const historyWeekStart = new Date(historyToday);
+historyWeekStart.setDate(historyWeekStart.getDate() - 6);
+
 const state = {
   rows: [],
   snapshots: [],
@@ -10,7 +21,11 @@ const state = {
     search: "",
     featureKey: "all",
     changeType: "all",
+    source: "Strapi Content History",
+    dateFrom: localDateValue(historyWeekStart),
+    dateTo: localDateValue(historyToday),
   },
+  adminSessionActive: false,
   language: {
     rows: [],
     page: 1,
@@ -39,6 +54,8 @@ const state = {
     languageIssue: "all",
   },
   advanced: {},
+  currentTarget: "labels",
+  ready: false,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -76,6 +93,9 @@ const els = {
   clearAdvanced: $("clearAdvanced"),
   activeFilterPill: $("activeFilterPill"),
   labelsBody: $("labelsBody"),
+  labelsPageTitle: $("labelsPageTitle"),
+  labelsPageDescription: $("labelsPageDescription"),
+  labelsPageExport: $("labelsPageExport"),
   tableInfo: $("tableInfo"),
   pageSize: $("pageSize"),
   prevPage: $("prevPage"),
@@ -126,8 +146,20 @@ const els = {
   historySearch: $("historySearch"),
   historyFeatureFilter: $("historyFeatureFilter"),
   historyChangeFilter: $("historyChangeFilter"),
+  historySourceFilter: $("historySourceFilter"),
+  historyDateFrom: $("historyDateFrom"),
+  historyDateTo: $("historyDateTo"),
+  historyConnectionStatus: $("historyConnectionStatus"),
+  historyAdminEmail: $("historyAdminEmail"),
+  historyAdminPassword: $("historyAdminPassword"),
+  historyConnectButton: $("historyConnectButton"),
+  historySyncButton: $("historySyncButton"),
+  historyDisconnectButton: $("historyDisconnectButton"),
   apiContent: $("apiContent"),
 };
+
+els.historyDateFrom.value = state.historyFilters.dateFrom;
+els.historyDateTo.value = state.historyFilters.dateTo;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -262,9 +294,15 @@ function badgeClass(change) {
   return String(change || "").toLowerCase().replaceAll(" ", "-") || "existing";
 }
 
+function actorCell(row) {
+  const name = row.changedBy || "-";
+  const details = [row.changedByUsername, row.changedByEmail].filter(Boolean).join(" · ");
+  return `<span class="actor-cell"><strong>${escapeHtml(name)}</strong>${details ? `<small>${escapeHtml(details)}</small>` : ""}</span>`;
+}
+
 function renderTable() {
   if (!state.rows.length) {
-    els.labelsBody.innerHTML = `<tr><td colspan="10" class="empty-row">No labels match the current filters.</td></tr>`;
+    els.labelsBody.innerHTML = `<tr><td colspan="12" class="empty-row">No labels match the current filters.</td></tr>`;
   } else {
     els.labelsBody.innerHTML = state.rows.map((row, index) => `
       <tr>
@@ -277,6 +315,8 @@ function renderTable() {
         <td><span class="status">${escapeHtml(row.status || "-")}</span></td>
         <td>${formatDate(row.firstSeenAt)}</td>
         <td><span class="change ${badgeClass(row.changeType)}">${escapeHtml(row.changeType || "-")}</span></td>
+        <td>${escapeHtml(row.actorRole || "No activity in last 7 days")}</td>
+        <td>${actorCell(row)}</td>
         <td><button class="row-action" data-index="${index}" type="button">View</button></td>
       </tr>`).join("");
   }
@@ -521,7 +561,9 @@ function renderHistory(data = {}) {
             <th>Date / Time</th>
             <th>Change</th>
             <th>Status</th>
-            <th>Updated By</th>
+            <th>Actor Role</th>
+            <th>Changed By</th>
+            <th>Source</th>
             <th>Feature Key</th>
             <th>Label Key</th>
             <th>English Text</th>
@@ -534,7 +576,9 @@ function renderHistory(data = {}) {
             <td>${formatDate(row.changedAt)}</td>
             <td><span class="change ${badgeClass(row.changeType)}">${escapeHtml(row.changeType)}</span></td>
             <td><span class="status">${escapeHtml(row.status || "-")}</span></td>
-            <td>${escapeHtml(row.changedBy || "-")}</td>
+            <td>${escapeHtml(row.actorRole || `${row.changeType} By`)}</td>
+            <td>${actorCell(row)}</td>
+            <td>${escapeHtml(row.source || "-")}</td>
             <td>${escapeHtml(row.featureKey || "-")}</td>
             <td>${escapeHtml(row.labelKey || "-")}</td>
             <td class="text-cell">${escapeHtml(row.englishText || "-")}</td>
@@ -546,6 +590,73 @@ function renderHistory(data = {}) {
   els.auditContent.innerHTML = `${summary}${table}`;
 }
 
+function renderHistoryConnection(status = {}) {
+  state.adminSessionActive = Boolean(status.adminSessionActive);
+  els.historyAdminEmail.hidden = state.adminSessionActive;
+  els.historyAdminPassword.hidden = state.adminSessionActive;
+  els.historyAdminEmail.closest("label").hidden = state.adminSessionActive;
+  els.historyAdminPassword.closest("label").hidden = state.adminSessionActive;
+  els.historyConnectButton.hidden = state.adminSessionActive;
+  els.historyDisconnectButton.hidden = !state.adminSessionActive;
+  els.historySyncButton.disabled = !state.adminSessionActive;
+  if (state.adminSessionActive) {
+    const sync = status.historySync;
+    els.historyConnectionStatus.textContent = sync?.syncedAt
+      ? `Connected. Last Strapi history sync: ${formatDate(sync.syncedAt)} · ${formatNumber(sync.eventsFound)} events from ${formatNumber(sync.documentsChecked)} entries.`
+      : "Connected. Sync Strapi History to collect revision users and dates.";
+  } else {
+    const sync = status.historySync;
+    els.historyConnectionStatus.textContent = sync?.syncedAt
+      ? `Last Strapi history sync: ${formatDate(sync.syncedAt)} · ${formatNumber(sync.eventsFound)} actor-aware events. Connect again to refresh it.`
+      : "Connect your Strapi admin account to fetch revision dates and user names. Credentials stay in server memory only.";
+  }
+}
+
+async function connectHistory() {
+  const email = els.historyAdminEmail.value.trim();
+  const password = els.historyAdminPassword.value;
+  els.historyConnectButton.disabled = true;
+  els.historyConnectButton.textContent = "Connecting...";
+  try {
+    const result = await api("/api/admin-login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    els.historyAdminPassword.value = "";
+    toast(result.message);
+    await loadStatus();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    els.historyConnectButton.disabled = false;
+    els.historyConnectButton.textContent = "Connect";
+  }
+}
+
+async function syncHistory() {
+  els.historySyncButton.disabled = true;
+  els.historySyncButton.textContent = "Syncing all entries...";
+  try {
+    const result = await api("/api/history/sync", { method: "POST" });
+    toast(result.message);
+    await loadStatus();
+    await loadHistory();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    els.historySyncButton.textContent = "Sync Strapi History";
+    els.historySyncButton.disabled = !state.adminSessionActive;
+  }
+}
+
+async function disconnectHistory() {
+  const result = await api("/api/admin-logout", { method: "POST" });
+  els.historyAdminPassword.value = "";
+  toast(result.message);
+  await loadStatus();
+}
+
 async function loadHistory() {
   const data = await api(`/api/history?${historyQueryParams()}`);
   state.historyRows = data.rows || [];
@@ -555,6 +666,7 @@ async function loadHistory() {
 
 async function loadStatus() {
   const status = await api("/api/status");
+  renderHistoryConnection(status);
   renderStats(status.totals || {});
   renderOptions(status.options || {});
   renderSnapshots(status.snapshots || []);
@@ -570,7 +682,6 @@ async function loadLabels() {
   const data = await api(`/api/labels?${queryParams()}`);
   state.rows = data.rows || [];
   state.total = data.total || 0;
-  renderStats(data.totals || {});
   renderOptions(data.options || {});
   renderSnapshots(data.snapshots || []);
   renderSidePanels(data.totals || {});
@@ -638,6 +749,11 @@ function openDrawer(row) {
     ["Component", `${row.component || "-"} (${row.componentId || "-"})`],
     ["Status", row.status],
     ["Change Type", row.changeType],
+    ["Actor Role", row.actorRole || "No activity in last 7 days"],
+    ["Changed By", row.changedBy || "-"],
+    ["Changed By Username", row.changedByUsername || "-"],
+    ["Changed By Email", row.changedByEmail || "-"],
+    ["History Changed Date", formatDate(row.historyChangedAt)],
     ["Language Issue", row.languageIssue],
     ["First Seen Date", formatDate(row.firstSeenAt)],
     ["Last Modified Date", formatDate(row.lastModifiedAt)],
@@ -663,12 +779,15 @@ async function loadSnapshotChange(snapshotId, change) {
   renderTable();
   renderStats(data.totals || {});
   toast(`Loaded ${formatNumber(data.total)} ${change} labels from snapshot`);
-  navigate("labels");
+  navigate("labels", { loadLabelsPage: false });
 }
 
 const ROUTE_BY_TARGET = {
   dashboard: "/dashboard",
   labels: "/labels",
+  "labels-new": "/labels/new",
+  "labels-modified": "/labels/modified",
+  "labels-removed": "/labels/removed",
   compare: "/dictionary-generator",
   snapshots: "/snapshots",
   language: "/language-issues",
@@ -676,6 +795,33 @@ const ROUTE_BY_TARGET = {
   settings: "/settings",
   audit: "/content-history",
   api: "/api-status",
+};
+
+const LABEL_PAGE_CONFIG = {
+  labels: {
+    title: "All Labels",
+    description: "Search all labels by Label ID, Feature Key, Label Key, English Text, or Arabic Text.",
+    changeType: "all",
+    exportLabel: "Export All Labels",
+  },
+  "labels-new": {
+    title: "New Labels",
+    description: "Labels newly introduced in the latest Strapi comparison.",
+    changeType: "New",
+    exportLabel: "Export New Labels",
+  },
+  "labels-modified": {
+    title: "Modified Labels",
+    description: "Existing labels whose English, Arabic, key, or related content changed.",
+    changeType: "Modified",
+    exportLabel: "Export Modified Labels",
+  },
+  "labels-removed": {
+    title: "Removed Labels",
+    description: "Labels present previously but missing from the latest Strapi comparison.",
+    changeType: "Removed",
+    exportLabel: "Export Removed Labels",
+  },
 };
 
 const TARGET_BY_ROUTE = {
@@ -688,15 +834,29 @@ const TARGET_BY_ROUTE = {
   "/dahbaord": "dashboard",
 };
 
-function navigate(target, { historyMode = "push" } = {}) {
-  const pageTarget = target === "labels" ? "dashboard" : target;
+function navigate(target, { historyMode = "push", loadLabelsPage = true } = {}) {
+  const labelPage = LABEL_PAGE_CONFIG[target];
+  const pageTarget = labelPage ? "labelsPage" : target;
   const route = ROUTE_BY_TARGET[target] || ROUTE_BY_TARGET.labels;
+  state.currentTarget = target;
+  if (labelPage) {
+    state.filters.changeType = labelPage.changeType;
+    state.page = 1;
+    els.labelsPageTitle.textContent = labelPage.title;
+    els.labelsPageDescription.textContent = labelPage.description;
+    els.labelsPageExport.textContent = labelPage.exportLabel;
+    els.changeFilter.value = labelPage.changeType;
+  }
   if (historyMode === "push" && window.location.pathname !== route) window.history.pushState({ target }, "", route);
   if (historyMode === "replace" && window.location.pathname !== route) window.history.replaceState({ target }, "", route);
-  document.body.classList.toggle("labels-only-mode", target === "labels");
+  document.body.classList.toggle("labels-only-mode", Boolean(labelPage));
   document.querySelectorAll(".page").forEach((page) => page.classList.toggle("active-page", page.id === pageTarget));
   document.querySelectorAll(".side-nav [data-nav-target]").forEach((link) => link.classList.toggle("active", link.dataset.navTarget === target));
-  if (target === "labels") window.scrollTo({ top: 0, behavior: "smooth" });
+  if (labelPage) {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    if (state.ready && loadLabelsPage) loadLabels().catch((error) => toast(error.message));
+  }
+  if (target === "dashboard" && state.ready) loadStatus().catch((error) => toast(error.message));
   if (target === "audit") loadHistory().catch((error) => toast(error.message));
   if (target === "language") loadLanguageConsistency().catch((error) => toast(error.message));
 }
@@ -780,6 +940,24 @@ els.historyChangeFilter.addEventListener("change", (event) => {
   state.historyFilters.changeType = event.target.value;
   loadHistory().catch((error) => toast(error.message));
 });
+els.historySourceFilter.addEventListener("change", (event) => {
+  state.historyFilters.source = event.target.value;
+  loadHistory().catch((error) => toast(error.message));
+});
+els.historyDateFrom.addEventListener("change", (event) => {
+  state.historyFilters.dateFrom = event.target.value;
+  loadHistory().catch((error) => toast(error.message));
+});
+els.historyDateTo.addEventListener("change", (event) => {
+  state.historyFilters.dateTo = event.target.value;
+  loadHistory().catch((error) => toast(error.message));
+});
+els.historyConnectButton.addEventListener("click", connectHistory);
+els.historySyncButton.addEventListener("click", syncHistory);
+els.historyDisconnectButton.addEventListener("click", () => disconnectHistory().catch((error) => toast(error.message)));
+els.historyAdminPassword.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") connectHistory();
+});
 els.pageSize.addEventListener("change", (event) => { state.pageSize = Number(event.target.value); state.page = 1; loadLabels().catch((error) => toast(error.message)); });
 els.prevPage.addEventListener("click", () => { if (state.page > 1) { state.page -= 1; loadLabels().catch((error) => toast(error.message)); } });
 els.nextPage.addEventListener("click", () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadLabels().catch((error) => toast(error.message)); } });
@@ -787,6 +965,7 @@ els.fetchButton.addEventListener("click", fetchLabels);
 els.refreshButton.addEventListener("click", () => loadStatus().then(loadLabels).then(loadLanguageConsistency).catch((error) => toast(error.message)));
 els.downloadExcel.addEventListener("click", downloadExcel);
 els.downloadExcel2.addEventListener("click", downloadExcel);
+els.labelsPageExport.addEventListener("click", downloadExcel);
 els.dictionaryBrowseButton.addEventListener("click", () => els.dictionaryFileInput.click());
 els.dictionaryDropZone.addEventListener("click", () => els.dictionaryFileInput.click());
 els.dictionaryFileInput.addEventListener("change", () => processDictionaryFile(els.dictionaryFileInput.files?.[0]));
@@ -874,8 +1053,14 @@ document.querySelectorAll(".side-nav [data-nav-target]").forEach((link) => {
     navigate(link.dataset.navTarget);
   });
 });
+document.querySelectorAll("[data-nav-card]").forEach((card) => {
+  card.addEventListener("click", () => navigate(card.dataset.navCard));
+});
 window.addEventListener("popstate", () => navigate(TARGET_BY_ROUTE[window.location.pathname] || "labels", { historyMode: "none" }));
 
 const initialTarget = TARGET_BY_ROUTE[window.location.pathname] || "labels";
 navigate(initialTarget, { historyMode: window.location.pathname === "/" ? "replace" : "none" });
-loadStatus().then(loadLabels).catch((error) => toast(error.message));
+loadStatus().then(() => {
+  state.ready = true;
+  return LABEL_PAGE_CONFIG[state.currentTarget] ? loadLabels() : null;
+}).catch((error) => toast(error.message));

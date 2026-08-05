@@ -64,8 +64,10 @@ button { cursor: pointer; }
 .stats-grid { display: grid; grid-template-columns: repeat(6, minmax(150px, 1fr)); gap: 18px; margin-bottom: 22px; }
 .metric {
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 22px 18px 18px 82px;
-  min-height: 112px; box-shadow: var(--shadow); position: relative;
+  min-height: 112px; box-shadow: var(--shadow); position: relative; text-align: left; color: var(--ink); font: inherit;
 }
+.metric-link { cursor: pointer; transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+.metric-link:hover, .metric-link:focus-visible { transform: translateY(-2px); border-color: #bda5df; box-shadow: 0 14px 30px rgba(53, 27, 88, .13); }
 .metric:before {
   content: ""; position: absolute; left: 22px; top: 26px; width: 44px; height: 44px; border-radius: 10px;
   background: linear-gradient(135deg, var(--stc-purple), var(--stc-purple-2));
@@ -122,7 +124,9 @@ input, select {
   grid-template-columns: repeat(5, minmax(170px, 1fr));
   align-items: start;
 }
-.labels-only-mode .labels-only-title { display: block; grid-column: 1 / -1; }
+.labels-only-mode .labels-only-title { display: flex; grid-column: 1 / -1; align-items: center; justify-content: space-between; gap: 18px; }
+.labels-only-mode .labels-only-title > div { min-width: 0; }
+.labels-only-mode .labels-only-title .primary-button { flex: 0 0 auto; }
 .labels-only-mode .labels-only-title h2 {
   margin: 0 0 6px;
   color: var(--stc-purple);
@@ -146,10 +150,13 @@ input, select {
 .table-toolbar select { width: 72px; min-height: 34px; }
 .table-toolbar button { width: 34px; height: 34px; }
 .table-wrap { overflow: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 1160px; }
+table { width: 100%; border-collapse: collapse; min-width: 1420px; }
 th, td { padding: 14px 13px; border-top: 1px solid #f0edf6; text-align: left; vertical-align: top; font-size: 12px; line-height: 1.45; }
 th { background: #faf9fd; color: #4a4564; font-weight: 850; white-space: nowrap; }
 .id-text { color: var(--stc-purple); font-weight: 850; font-size: 11px; }
+.actor-cell { display: grid; gap: 3px; min-width: 150px; }
+.actor-cell strong { color: var(--ink); font-size: 12px; }
+.actor-cell small { color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
 .text-cell { max-width: 220px; }
 .rtl { direction: rtl; text-align: right; }
 .issue, .status, .change { display: inline-flex; border-radius: 999px; padding: 5px 8px; font-weight: 850; font-size: 11px; white-space: nowrap; }
@@ -167,11 +174,29 @@ th { background: #faf9fd; color: #4a4564; font-weight: 850; white-space: nowrap;
 
 .simple-page h2 { margin: 0 0 16px; color: var(--stc-purple); }
 .simple-card { padding: 20px; min-height: 120px; }
+.history-connection {
+  min-height: 0;
+  margin-bottom: 16px;
+  display: grid;
+  grid-template-columns: minmax(260px, 1.5fr) minmax(190px, 1fr) minmax(190px, 1fr) auto auto auto;
+  align-items: end;
+  gap: 14px;
+}
+.history-connection h3 { margin: 0 0 6px; color: var(--ink); font-size: 16px; line-height: 1.35; }
+.history-connection p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.55; }
+.history-connection label {
+  display: grid;
+  gap: 8px;
+  color: #4b4566;
+  font-size: 12px;
+  font-weight: 800;
+}
+.history-connection button { min-height: 42px; white-space: nowrap; }
 .history-controls {
   min-height: 0;
   margin-bottom: 16px;
   display: grid;
-  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-columns: 2fr repeat(5, 1fr);
   gap: 14px;
 }
 .history-controls label {
@@ -202,7 +227,7 @@ th { background: #faf9fd; color: #4a4564; font-weight: 850; white-space: nowrap;
   font-size: 22px;
   margin-top: 4px;
 }
-.history-table { min-width: 1380px; }
+.history-table { min-width: 1640px; }
 .compare-cards, .issue-grid { display: grid; grid-template-columns: repeat(3, minmax(140px, 1fr)); gap: 14px; }
 .compare-cards button, .issue-grid span, .snapshot-row {
   border: 1px solid var(--line); background: #fbfaff; border-radius: 8px; padding: 16px; text-align: left; color: var(--ink); font-weight: 750;
@@ -380,9 +405,10 @@ th { background: #faf9fd; color: #4a4564; font-weight: 850; white-space: nowrap;
   .main { padding: 20px; }
   .topbar, .table-toolbar, .language-page-head, .dictionary-page-head, .dictionary-section-head, .dictionary-results-head, .dictionary-downloads { align-items: stretch; flex-direction: column; }
   .top-actions, .table-toolbar div { justify-content: flex-start; }
-  .stats-grid, .filters-card, .advanced-panel, .compare-cards, .issue-grid, .history-controls, .history-summary, .language-controls, .dictionary-summary { grid-template-columns: 1fr; }
+  .stats-grid, .filters-card, .advanced-panel, .compare-cards, .issue-grid, .history-connection, .history-controls, .history-summary, .language-controls, .dictionary-summary { grid-template-columns: 1fr; }
   .metric { padding-left: 76px; }
   .dictionary-file-meta { align-items: flex-start; flex-direction: column; }
   .dictionary-file-meta span { white-space: normal; }
   .dictionary-filters, .dictionary-downloads > div:last-child { justify-content: flex-start; }
+  .labels-only-mode .labels-only-title { align-items: stretch; flex-direction: column; }
 }

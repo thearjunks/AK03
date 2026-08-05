@@ -12,8 +12,36 @@ const ADMIN_SUPPLEMENT_PATH = path.join(__dirname, "data", "admin-label-suppleme
 const EXPORT_DIR = path.join(__dirname, "outputs", "dashboard-downloads");
 const DICTIONARY_EXPORT_DIR = path.join(__dirname, "outputs", "dictionary-generator");
 const STRAPI_LABELS_API = "https://content.stc.com.kw/api/stc-labels";
+const STRAPI_ADMIN_LOGIN = "https://content.stc.com.kw/admin/login";
+const STRAPI_CONTENT_MANAGER = "https://content.stc.com.kw/content-manager";
+const STRAPI_LABEL_UID = "api::stc-label.stc-label";
+const ENV_ADMIN_TOKEN = process.env.STRAPI_ADMIN_TOKEN || "";
+const adminSessions = new Map();
 const PAGE_SIZE = 25;
 const FETCH_PAGE_SIZE = 100;
+const HISTORY_RETENTION_DAYS = 7;
+const STRAPI_USERS = [
+  ["Abhilash Krishna", "abhilash.krishna", "abhilash.krishna.c@stc.com.kw"],
+  ["Adina Theodorescu", "", "adina.theodorescu@stc.com.kw"],
+  ["Ali Chamas", "ali.chamas", "ali.chamas@solutions.com.kw"],
+  ["Arjun Sajimon", "arjun.sajimon", "arjun.sajimon.c@stc.com.kw"],
+  ["Ayush Goel", "ayush.goel", "ayush.goel.c@stc.com.kw"],
+  ["Bhuvaneshwari Munusamy", "buvaneswari.munusamy", "buvaneswari.munusamy@solutions.com.kw"],
+  ["Chris Aziel", "chris.aziel", "chris.aziel.c@stc.com.kw"],
+  ["Hasan Fakhra", "", "hasan.fakhra@stc.com.kw"],
+  ["Khalifah Al Yetam", "", "khalifah.alyetama@stc.com.kw"],
+  ["Mohamed Ramzan", "mohamed.ramzan", "mohamed.ramzan.c@stc.com.kw"],
+  ["Mohammad Shahid", "mohammad.shahid", "mohammad.shahid.c@stc.com.kw"],
+  ["Mohammed Mohsin", "mohammed.mohsin", "mohammed.mohsin.c@stc.com.kw"],
+  ["Nader Al Khatib", "", "nader.alkhatib@stc.com.kw"],
+  ["Panneer Rajadurai", "Panneer.Rajadurai", "panneer.rajadurai.c@solutions.com.kw"],
+  ["Pradeep Prasanga", "Pradeep_Prasanga", "pradeep.prasanga.c@stc.com.kw"],
+  ["Pratik Deshpande", "pratik.deshpande", "pratik.deshpande.c@stc.com.kw"],
+  ["Priya Thangarasa", "priya.thangarasa", "priya.thangarasa@stc.com.kw"],
+  ["Sama Al Fares", "", "sama.alfares@stc.com.kw"],
+  ["Suresh Dandu", "", "suresh.dandu.c@stc.com.kw"],
+  ["Tushar Singhal", "tushar.singhal", "tushar.singhal.c@stc.com.kw"],
+].map(([fullName, username, email]) => ({ fullName, username, email }));
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -36,12 +64,13 @@ async function writeState(state) {
   await fs.writeFile(DATA_PATH, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
-function getJson(url) {
+function getJson(url, headers = {}) {
   return new Promise((resolve, reject) => {
     const request = https.get(url, {
       headers: {
         Accept: "application/json",
         "User-Agent": "AK-stc-labels-dashboard/1.0",
+        ...headers,
       },
     }, (response) => {
       let body = "";
@@ -64,6 +93,91 @@ function getJson(url) {
   });
 }
 
+function postJson(url, payload, headers = {}) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const request = https.request(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(body),
+        "User-Agent": "AK-stc-labels-dashboard/1.0",
+        ...headers,
+      },
+    }, (response) => {
+      let responseBody = "";
+      response.setEncoding("utf8");
+      response.on("data", (chunk) => { responseBody += chunk; });
+      response.on("end", () => {
+        let json = {};
+        try {
+          json = responseBody ? JSON.parse(responseBody.replace(/^\uFEFF/, "")) : {};
+        } catch {
+          json = { raw: responseBody };
+        }
+        if ((response.statusCode ?? 500) >= 400) {
+          const message = json.error?.message || json.message || responseBody.slice(0, 300) || "Request failed";
+          reject(new Error(`Strapi returned ${response.statusCode}: ${message}`));
+          return;
+        }
+        resolve(json);
+      });
+    });
+    request.on("error", reject);
+    request.setTimeout(60000, () => request.destroy(new Error("Strapi request timed out")));
+    request.write(body);
+    request.end();
+  });
+}
+
+function requestSessionId(req) {
+  const cookies = text(req.headers.cookie).split(";").map((item) => item.trim());
+  const match = cookies.find((item) => item.startsWith("ak_labels_admin_session="));
+  return match ? decodeURIComponent(match.slice(match.indexOf("=") + 1)) : "";
+}
+
+function adminToken(req) {
+  const session = adminSessions.get(requestSessionId(req));
+  return session?.token || ENV_ADMIN_TOKEN;
+}
+
+function extractAdminJwt(json) {
+  return json?.data?.token
+    || json?.data?.jwt
+    || json?.data?.accessToken
+    || json?.token
+    || json?.jwt
+    || json?.accessToken
+    || "";
+}
+
+function userDisplayName(user) {
+  if (!user) return "";
+  const fullName = [user.firstname, user.lastname].map(text).map((part) => part.trim()).filter(Boolean).join(" ");
+  return user.username || fullName || user.email || "";
+}
+
+function knownUser(value) {
+  const key = text(value).trim().toLowerCase();
+  if (!key) return null;
+  return STRAPI_USERS.find((user) => (
+    user.username.toLowerCase() === key || user.email.toLowerCase() === key || user.fullName.toLowerCase() === key
+  )) ?? null;
+}
+
+async function loginAdmin(email, password) {
+  const json = await postJson(STRAPI_ADMIN_LOGIN, { email, password });
+  const token = extractAdminJwt(json);
+  if (!token) throw new Error("Login succeeded, but Strapi did not return an admin token.");
+  const testUrl = new URL(`${STRAPI_CONTENT_MANAGER}/collection-types/${STRAPI_LABEL_UID}`);
+  testUrl.searchParams.set("page", "1");
+  testUrl.searchParams.set("pageSize", "1");
+  testUrl.searchParams.set("plugins[i18n][locale]", "en");
+  await getJson(testUrl, { Authorization: `Bearer ${token}` });
+  return token;
+}
+
 function hasArabic(value) {
   return /[\u0600-\u06FF]/.test(text(value));
 }
@@ -80,13 +194,16 @@ function isFullEnglish(value) {
 async function readState() {
   const raw = await fs.readFile(DATA_PATH, "utf8");
   const state = JSON.parse(raw);
-  const changeHistory = state.changeHistory?.length ? state.changeHistory : historyFromSnapshots(state.snapshots ?? []);
+  const storedHistory = state.changeHistory?.length ? state.changeHistory : historyFromSnapshots(state.snapshots ?? []);
+  const cutoff = Date.now() - (HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const changeHistory = storedHistory.filter((record) => new Date(record.changedAt).getTime() >= cutoff);
   return {
     initializedAt: state.initializedAt ?? null,
-    labels: state.labels ?? {},
+    labels: reconcileRemovedLabels(state.labels ?? {}),
     snapshots: state.snapshots ?? [],
     lastSnapshot: state.lastSnapshot ?? null,
     changeHistory,
+    historySync: state.historySync ?? null,
   };
 }
 
@@ -125,6 +242,28 @@ function fallbackLabelKey(row) {
     text(row.labelKey).trim(),
     text(row.component).trim(),
   ].join("\u001f");
+}
+
+function featureLabelKey(row) {
+  return [
+    text(row.featureKey).trim().toLocaleLowerCase("en"),
+    text(row.labelKey).trim().toLocaleLowerCase("en"),
+  ].join("\u001f");
+}
+
+function reconcileRemovedLabels(labels = {}) {
+  const rows = Object.values(labels);
+  const activePairs = new Set(
+    rows
+      .filter((row) => row.changeType !== "Removed")
+      .map(featureLabelKey),
+  );
+
+  return Object.fromEntries(
+    Object.entries(labels).filter(([, row]) => (
+      row.changeType !== "Removed" || !activePairs.has(featureLabelKey(row))
+    )),
+  );
 }
 
 function labelSignature(row) {
@@ -271,6 +410,165 @@ function extractLabelRows(entry) {
   return rows;
 }
 
+function historyRowMap(rows) {
+  const occurrences = new Map();
+  const mapped = new Map();
+  for (const row of rows) {
+    const base = `${text(row.component).trim()}\u001f${text(row.labelKey).trim()}`;
+    const occurrence = (occurrences.get(base) || 0) + 1;
+    occurrences.set(base, occurrence);
+    mapped.set(`${base}\u001f${occurrence}`, row);
+  }
+  return mapped;
+}
+
+function historyStatus(version) {
+  const status = text(version.status).trim();
+  return status ? status[0].toUpperCase() + status.slice(1) : "Active";
+}
+
+function currentLabelId(row, currentRows) {
+  const exact = currentRows.get(stableLabelKey(row));
+  const fallback = currentRows.get(fallbackLabelKey(row));
+  return exact?.labelId || fallback?.labelId || `LBL-${hash(stableLabelKey(row) || fallbackLabelKey(row), 12)}`;
+}
+
+function strapiHistoryRecord(type, row, version, details, currentRows) {
+  const actor = userDisplayName(version.createdBy) || "Unknown Strapi user";
+  const changedAt = version.createdAt || "";
+  const record = historyRecord(type, {
+    ...row,
+    labelId: currentLabelId(row, currentRows),
+    status: historyStatus(version),
+    updatedBy: version.createdBy ?? null,
+  }, changedAt, details, `strapi-version-${version.id}`);
+  record.historyId = `HIS-${hash(`${version.id}\u001f${type}\u001f${record.labelId}\u001f${record.component}\u001f${record.labelKey}`, 16)}`;
+  record.changedBy = actor;
+  record.actorRole = `${type} By`;
+  record.source = "Strapi Content History";
+  record.versionId = version.id;
+  if (type === "Created") record.changeSummary = "Label created";
+  if (type === "Removed") record.changeSummary = "Label removed in this revision";
+  return record;
+}
+
+async function fetchAdminLabelDocuments(token) {
+  if (!token) throw new Error("Connect your Strapi admin account before syncing history.");
+  const rows = [];
+  let page = 1;
+  let pageCount = 1;
+  do {
+    const url = new URL(`${STRAPI_CONTENT_MANAGER}/collection-types/${STRAPI_LABEL_UID}`);
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("pageSize", "100");
+    url.searchParams.set("sort", "updatedAt:DESC");
+    url.searchParams.set("plugins[i18n][locale]", "en");
+    const json = await getJson(url, { Authorization: `Bearer ${token}` });
+    const entries = json.results ?? json.data?.results ?? json.data ?? [];
+    const pagination = json.pagination ?? json.meta?.pagination ?? {};
+    rows.push(...entries);
+    pageCount = Number(pagination.pageCount) || Math.max(1, Math.ceil((Number(pagination.total) || rows.length) / 100));
+    page += 1;
+  } while (page <= pageCount);
+  return rows;
+}
+
+async function fetchDocumentVersions(documentId, token) {
+  const versions = [];
+  let page = 1;
+  let pageCount = 1;
+  do {
+    const url = new URL(`${STRAPI_CONTENT_MANAGER}/history-versions`);
+    url.searchParams.set("contentType", STRAPI_LABEL_UID);
+    url.searchParams.set("documentId", documentId);
+    url.searchParams.set("locale", "en");
+    url.searchParams.set("page", String(page));
+    url.searchParams.set("pageSize", "100");
+    const json = await getJson(url, { Authorization: `Bearer ${token}` });
+    versions.push(...(json.data ?? []));
+    pageCount = Number(json.meta?.pagination?.pageCount) || 1;
+    page += 1;
+  } while (page <= pageCount);
+  return versions;
+}
+
+function recordsFromVersions(versions, currentRows) {
+  const records = [];
+  let previous = new Map();
+  for (const version of [...versions].sort((a, b) => text(a.createdAt).localeCompare(text(b.createdAt)))) {
+    const entry = {
+      ...(version.data ?? {}),
+      documentId: version.relatedDocumentId ?? version.data?.documentId ?? "",
+      locale: version.locale?.code ?? version.data?.locale ?? "en",
+      createdBy: version.createdBy ?? null,
+      updatedBy: version.createdBy ?? null,
+    };
+    const current = historyRowMap(extractLabelRows(entry));
+    for (const [identity, row] of current) {
+      const old = previous.get(identity);
+      if (!old) records.push(strapiHistoryRecord("Created", row, version, [], currentRows));
+      else if (rowChanged(old, row)) {
+        records.push(strapiHistoryRecord("Modified", row, version, changeDetails(old, row), currentRows));
+      }
+    }
+    for (const [identity, old] of previous) {
+      if (!current.has(identity)) records.push(strapiHistoryRecord("Removed", old, version, [], currentRows));
+    }
+    previous = current;
+  }
+  return records;
+}
+
+async function syncStrapiContentHistory(state, token) {
+  if (!token) throw new Error("Connect your Strapi admin account before syncing history.");
+  const adminEntries = await fetchAdminLabelDocuments(token);
+  const documentIds = new Set(adminEntries.map((entry) => entry.documentId ?? entry.id).filter(Boolean).map(String));
+  for (const row of rowsFromState(state, true)) {
+    if (row.documentId) documentIds.add(String(row.documentId));
+  }
+  const currentRows = new Map();
+  for (const row of rowsFromState(state, true)) {
+    currentRows.set(stableLabelKey(row), row);
+    if (!currentRows.has(fallbackLabelKey(row))) currentRows.set(fallbackLabelKey(row), row);
+  }
+
+  const ids = [...documentIds];
+  const collected = [];
+  const failures = [];
+  const workerCount = Math.min(5, ids.length);
+  let cursor = 0;
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (cursor < ids.length) {
+      const documentId = ids[cursor];
+      cursor += 1;
+      try {
+        const versions = await fetchDocumentVersions(documentId, token);
+        collected.push(...recordsFromVersions(versions, currentRows));
+      } catch (error) {
+        failures.push({ documentId, error: error.message });
+      }
+    }
+  });
+  await Promise.all(workers);
+
+  const cutoff = Date.now() - (HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const retained = collected.filter((record) => new Date(record.changedAt).getTime() >= cutoff);
+  const unique = new Map(retained.map((record) => [record.historyId, record]));
+  const snapshotRecords = (state.changeHistory ?? []).filter((record) => record.source !== "Strapi Content History");
+  state.changeHistory = [...unique.values(), ...snapshotRecords]
+    .sort((a, b) => text(b.changedAt).localeCompare(text(a.changedAt)))
+    .slice(0, 50000);
+  state.historySync = {
+    syncedAt: nowIso(),
+    retentionDays: HISTORY_RETENTION_DAYS,
+    documentsChecked: ids.length,
+    revisionsFound: new Set(retained.map((record) => record.versionId).filter(Boolean)).size,
+    eventsFound: unique.size,
+    failures,
+  };
+  return state.historySync;
+}
+
 async function fetchLatestStrapiLabels() {
   const all = [];
   let page = 1;
@@ -315,25 +613,37 @@ function compareAndSaveLabels(state, currentRows, sourceInfo = {}) {
   const previousRows = rowsFromState(state, true);
   const previousByStable = new Map();
   const previousByFallback = new Map();
+  const previousByFeatureLabel = new Map();
+  const indexPrevious = (index, key, row) => {
+    if (!index.has(key)) index.set(key, []);
+    index.get(key).push(row);
+  };
   for (const row of previousRows) {
-    previousByStable.set(stableLabelKey(row), row);
-    if (!previousByFallback.has(fallbackLabelKey(row))) previousByFallback.set(fallbackLabelKey(row), row);
+    indexPrevious(previousByStable, stableLabelKey(row), row);
+    indexPrevious(previousByFallback, fallbackLabelKey(row), row);
+    indexPrevious(previousByFeatureLabel, featureLabelKey(row), row);
   }
 
   const nextLabels = {};
   const seenPreviousIds = new Set();
   const changes = { new: [], modified: [], removed: [] };
+  const firstUnseen = (index, key) => {
+    const candidates = index.get(key) ?? [];
+    return candidates.find((row) => row.changeType !== "Removed" && !seenPreviousIds.has(row.labelId))
+      ?? candidates.find((row) => !seenPreviousIds.has(row.labelId));
+  };
 
   for (const raw of currentRows) {
-    let old = previousByStable.get(stableLabelKey(raw)) ?? previousByFallback.get(fallbackLabelKey(raw));
-    if (old?.labelId && seenPreviousIds.has(old.labelId)) old = undefined;
+    const old = firstUnseen(previousByStable, stableLabelKey(raw))
+      ?? firstUnseen(previousByFallback, fallbackLabelKey(raw))
+      ?? firstUnseen(previousByFeatureLabel, featureLabelKey(raw));
     const labelId = old?.labelId ?? `LBL-${hash(stableLabelKey(raw) || fallbackLabelKey(raw), 12)}`;
     const details = changeDetails(old, raw);
     let changeType = "Existing";
     if (!old || old.changeType === "Removed") changeType = "New";
     else if (rowChanged(old, raw)) changeType = "Modified";
 
-      const row = {
+    const row = {
       ...old,
       ...raw,
       labelId,
@@ -352,7 +662,10 @@ function compareAndSaveLabels(state, currentRows, sourceInfo = {}) {
     if (changeType === "Modified") changes.modified.push(compact(row));
   }
 
+  const currentFeatureLabels = new Set(currentRows.map(featureLabelKey));
   for (const old of previousRows) {
+    // Strapi component IDs and row positions can change without deleting a label.
+    if (currentFeatureLabels.has(featureLabelKey(old))) continue;
     if (old.changeType === "Removed" || seenPreviousIds.has(old.labelId)) {
       if (old.changeType === "Removed" && !nextLabels[old.labelId]) nextLabels[old.labelId] = old;
       continue;
@@ -660,7 +973,10 @@ function filterRows(rows, query) {
 
 function filterHistory(rows, query) {
   const search = text(query.search).trim().toLowerCase();
+  const fromTime = query.dateFrom ? new Date(`${query.dateFrom}T00:00:00+03:00`).getTime() : null;
+  const toTime = query.dateTo ? new Date(`${query.dateTo}T23:59:59.999+03:00`).getTime() : null;
   return rows.filter((row) => {
+    const directoryUser = knownUser(row.changedBy);
     const haystack = [
       row.historyId,
       row.labelId,
@@ -674,6 +990,9 @@ function filterHistory(rows, query) {
       row.changeSummary,
       row.changedAt,
       row.changedBy,
+      directoryUser?.fullName,
+      directoryUser?.username,
+      directoryUser?.email,
       row.source,
       row.entryId,
       row.documentId,
@@ -682,8 +1001,24 @@ function filterHistory(rows, query) {
     if (query.featureKey && query.featureKey !== "all" && row.featureKey !== query.featureKey) return false;
     if (query.changeType && query.changeType !== "all" && row.changeType !== query.changeType) return false;
     if (query.status && query.status !== "all" && row.status !== query.status) return false;
+    if (query.source && query.source !== "all" && row.source !== query.source) return false;
+    const changedTime = new Date(row.changedAt).getTime();
+    if (fromTime && (!Number.isFinite(changedTime) || changedTime < fromTime)) return false;
+    if (toTime && (!Number.isFinite(changedTime) || changedTime > toTime)) return false;
     return true;
   });
+}
+
+function presentHistoryRecord(row) {
+  const snapshotOnly = row.source === "Dashboard snapshot comparison";
+  const directoryUser = snapshotOnly ? null : knownUser(row.changedBy);
+  return {
+    ...row,
+    changedBy: snapshotOnly ? "Not available (snapshot only)" : (directoryUser?.fullName || row.changedBy),
+    changedByUsername: directoryUser?.username || (!snapshotOnly ? row.changedBy : ""),
+    changedByEmail: directoryUser?.email || "",
+    actorRole: row.actorRole || `${row.changeType} By`,
+  };
 }
 
 function compact(row) {
@@ -711,6 +1046,42 @@ function compact(row) {
     languageIssue: languageIssues(row).join(", ") || "None",
     changeSummary: row.changeSummary,
     changeDetails: row.changeDetails ?? [],
+    actorRole: row.actorRole ?? "",
+    changedBy: row.changedBy ?? "",
+    changedByUsername: row.changedByUsername ?? "",
+    changedByEmail: row.changedByEmail ?? "",
+    historyChangedAt: row.historyChangedAt ?? "",
+  };
+}
+
+function latestActorsByLabelId(historyRows) {
+  const actors = new Map();
+  const strapiRows = historyRows
+    .filter((row) => row.source === "Strapi Content History")
+    .sort((a, b) => text(b.changedAt).localeCompare(text(a.changedAt)));
+  for (const event of strapiRows) {
+    if (!event.labelId || actors.has(event.labelId)) continue;
+    const presented = presentHistoryRecord(event);
+    actors.set(event.labelId, {
+      actorRole: presented.actorRole,
+      changedBy: presented.changedBy || "Unknown Strapi user",
+      changedByUsername: presented.changedByUsername || "",
+      changedByEmail: presented.changedByEmail || "",
+      historyChangedAt: event.changedAt || "",
+    });
+  }
+  return actors;
+}
+
+function labelWithLatestActor(row, actorMap) {
+  const actor = actorMap.get(row.labelId);
+  return {
+    ...row,
+    actorRole: actor?.actorRole || "No activity in last 7 days",
+    changedBy: actor?.changedBy || "-",
+    changedByUsername: actor?.changedByUsername || "",
+    changedByEmail: actor?.changedByEmail || "",
+    historyChangedAt: actor?.historyChangedAt || "",
   };
 }
 
@@ -1163,7 +1534,7 @@ async function processDictionaryWorkbook(buffer, originalFileName, state) {
   return { jobId, results, summary, sheetSummaries, files: { updated: updatedName, exceptions: exceptionsName, summary: summaryName } };
 }
 
-app.get("/api/status", async (_req, res) => {
+app.get("/api/status", async (req, res) => {
   const state = await readState();
   const allRows = rowsFromState(state, true);
   const totals = summarize(allRows, allRows);
@@ -1176,8 +1547,56 @@ app.get("/api/status", async (_req, res) => {
     snapshots: state.snapshots.map(snapshotSummary),
     totals,
     historyTotals: summarizeHistory(state.changeHistory ?? []),
+    historySync: state.historySync ? {
+      ...state.historySync,
+      retentionDays: HISTORY_RETENTION_DAYS,
+      eventsFound: (state.changeHistory ?? []).filter((row) => row.source === "Strapi Content History").length,
+    } : null,
+    adminSessionActive: Boolean(adminToken(req)),
     options: options(allRows.filter((row) => row.changeType !== "Removed")),
   });
+});
+
+app.post("/api/admin-login", async (req, res) => {
+  try {
+    const email = text(req.body?.email).trim();
+    const password = text(req.body?.password);
+    if (!email || !password) return res.status(400).json({ error: "Enter both Strapi email and password." });
+    const token = await loginAdmin(email, password);
+    const sessionId = crypto.randomUUID();
+    adminSessions.set(sessionId, { token, connectedAt: nowIso() });
+    const secure = req.secure || text(req.headers["x-forwarded-proto"]).split(",")[0].trim() === "https";
+    res.setHeader("Set-Cookie", `ak_labels_admin_session=${encodeURIComponent(sessionId)}; Path=/; HttpOnly; SameSite=Strict${secure ? "; Secure" : ""}`);
+    res.json({ ok: true, adminSessionActive: true, message: "Strapi admin account connected for this server session." });
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+app.post("/api/admin-logout", (req, res) => {
+  adminSessions.delete(requestSessionId(req));
+  res.setHeader("Set-Cookie", "ak_labels_admin_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0");
+  res.json({
+    ok: true,
+    adminSessionActive: Boolean(ENV_ADMIN_TOKEN),
+    message: ENV_ADMIN_TOKEN ? "Runtime login cleared; the environment token is still active." : "Strapi admin session disconnected.",
+  });
+});
+
+app.post("/api/history/sync", async (_req, res) => {
+  try {
+    const state = await readState();
+    const result = await syncStrapiContentHistory(state, adminToken(_req));
+    await writeState(state);
+    res.json({
+      ok: true,
+      ...result,
+      totals: summarizeHistory(state.changeHistory ?? []),
+      message: `Synced ${result.eventsFound} actor-aware label events from ${result.documentsChecked} Strapi entries.`,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 function summarizeHistory(rows = []) {
@@ -1197,9 +1616,10 @@ app.get("/api/labels", async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || PAGE_SIZE));
   const start = (page - 1) * pageSize;
   const totals = summarize(filtered, allRows);
+  const actorMap = latestActorsByLabelId(state.changeHistory ?? []);
   totals.featureEntries = state.lastSnapshot?.sourceTotals?.entries ?? totals.featureKeys;
   res.json({
-    rows: filtered.slice(start, start + pageSize).map(compact),
+    rows: filtered.slice(start, start + pageSize).map((row) => compact(labelWithLatestActor(row, actorMap))),
     total: filtered.length,
     page,
     pageSize,
@@ -1243,7 +1663,7 @@ app.get("/api/history", async (req, res) => {
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || PAGE_SIZE));
   const start = (page - 1) * pageSize;
   res.json({
-    rows: rows.slice(start, start + pageSize),
+    rows: rows.slice(start, start + pageSize).map(presentHistoryRecord),
     total: rows.length,
     page,
     pageSize,
@@ -1365,7 +1785,10 @@ function addHistorySheet(workbook, historyRows) {
     { header: "Date Time", key: "changedAt", width: 24 },
     { header: "Change Type", key: "changeType", width: 16 },
     { header: "Status", key: "status", width: 14 },
+    { header: "Actor Role", key: "actorRole", width: 18 },
     { header: "Changed By", key: "changedBy", width: 28 },
+    { header: "Username", key: "changedByUsername", width: 26 },
+    { header: "Email", key: "changedByEmail", width: 38 },
     { header: "Feature Key", key: "featureKey", width: 28 },
     { header: "Label Key", key: "labelKey", width: 32 },
     { header: "English Text", key: "englishText", width: 54 },
@@ -1380,12 +1803,16 @@ function addHistorySheet(workbook, historyRows) {
   ];
   sheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
   sheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF4F008C" } };
-  for (const row of historyRows) {
+  for (const rawRow of historyRows) {
+    const row = presentHistoryRecord(rawRow);
     sheet.addRow({
       changedAt: row.changedAt,
       changeType: row.changeType,
       status: row.status,
+      actorRole: row.actorRole || `${row.changeType} By`,
       changedBy: row.changedBy,
+      changedByUsername: row.changedByUsername,
+      changedByEmail: row.changedByEmail,
       featureKey: row.featureKey,
       labelKey: row.labelKey,
       englishText: row.englishText,
@@ -1400,7 +1827,7 @@ function addHistorySheet(workbook, historyRows) {
     });
   }
   sheet.views = [{ state: "frozen", ySplit: 1 }];
-  sheet.autoFilter = "A1:O1";
+  sheet.autoFilter = "A1:R1";
 }
 
 function excelDate(value) {
@@ -1495,8 +1922,11 @@ app.get("/api/download/xlsx", async (req, res) => {
   const { state, filtered } = await labelData(req.query);
   await fs.mkdir(EXPORT_DIR, { recursive: true });
   const workbook = await buildWorkbook(filtered);
-  addHistorySheet(workbook, filterHistory(state.changeHistory ?? [], req.query));
-  addLanguageIssuesSheet(workbook, languageConsistencyRecords(rowsFromState(state, false)));
+  const exportedLabelIds = new Set(filtered.map((row) => row.labelId));
+  const exportedHistory = (state.changeHistory ?? []).filter((row) => exportedLabelIds.has(row.labelId));
+  const exportedLanguageIssues = languageConsistencyRecords(filtered.filter((row) => row.changeType !== "Removed"));
+  addHistorySheet(workbook, exportedHistory);
+  addLanguageIssuesSheet(workbook, exportedLanguageIssues);
   const fileName = `stc-labels-filtered-${filtered.length}-rows-${Date.now()}.xlsx`;
   const filePath = path.join(EXPORT_DIR, fileName);
   await workbook.xlsx.writeFile(filePath);
@@ -1506,6 +1936,9 @@ app.get("/api/download/xlsx", async (req, res) => {
 app.get([
   "/dashboard",
   "/labels",
+  "/labels/new",
+  "/labels/modified",
+  "/labels/removed",
   "/dictionary-generator",
   "/snapshots",
   "/language-issues",
@@ -1522,6 +1955,7 @@ app.get([
 });
 
 const port = Number(process.env.PORT) || 4555;
+await writeState(await readState());
 app.listen(port, () => {
   console.log(`AK stc labels dashboard running at http://localhost:${port}`);
 });

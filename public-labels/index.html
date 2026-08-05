@@ -15,7 +15,10 @@
         </div>
         <nav class="side-nav" aria-label="AK stc labels navigation">
           <a href="/dashboard" data-nav-target="dashboard">Dashboard</a>
-          <a href="/labels" data-nav-target="labels">Labels</a>
+          <a href="/labels" data-nav-target="labels">All Labels</a>
+          <a href="/labels/new" data-nav-target="labels-new">New Labels</a>
+          <a href="/labels/modified" data-nav-target="labels-modified">Modified Labels</a>
+          <a href="/labels/removed" data-nav-target="labels-removed">Removed Labels</a>
           <a href="/dictionary-generator" data-nav-target="compare">Dictionary Generator</a>
           <a href="/snapshots" data-nav-target="snapshots">Snapshots</a>
           <a href="/language-issues" data-nav-target="language">Language Issues</a>
@@ -46,20 +49,25 @@
 
         <section id="dashboard" class="page active-page">
           <div class="stats-grid">
-            <article class="metric total"><span>Total Active Labels</span><strong id="statTotal">0</strong><small id="statFeatureKeys">Across 0 Feature Entries</small></article>
+            <button class="metric total metric-link" data-nav-card="labels" type="button"><span>Total Active Labels</span><strong id="statTotal">0</strong><small id="statFeatureKeys">Across 0 Feature Entries</small></button>
             <article class="metric existing"><span>Existing</span><strong id="statExisting">0</strong><small id="statExistingPct">0% of total</small></article>
-            <article class="metric new"><span>New</span><strong id="statNew">0</strong><small id="statNewPct">0% of total</small></article>
-            <article class="metric modified"><span>Modified</span><strong id="statModified">0</strong><small id="statModifiedPct">0% of total</small></article>
-            <article class="metric removed"><span>Removed</span><strong id="statRemoved">0</strong><small id="statRemovedPct">0% of total</small></article>
+            <button class="metric new metric-link" data-nav-card="labels-new" type="button"><span>New Labels</span><strong id="statNew">0</strong><small id="statNewPct">0% of total</small></button>
+            <button class="metric modified metric-link" data-nav-card="labels-modified" type="button"><span>Modified Labels</span><strong id="statModified">0</strong><small id="statModifiedPct">0% of total</small></button>
+            <button class="metric removed metric-link" data-nav-card="labels-removed" type="button"><span>Removed Labels</span><strong id="statRemoved">0</strong><small id="statRemovedPct">0% of total</small></button>
             <article class="metric issues"><span>Language Issues</span><strong id="statIssues">0</strong><small id="statIssuesPct">0% of total</small></article>
           </div>
+        </section>
 
+        <section id="labelsPage" class="page labels-page">
           <div class="content-grid">
             <section class="workspace">
               <div class="filters-card">
                 <div class="labels-only-title">
-                  <h2>All Labels</h2>
-                  <p>Search all labels by Label ID, Feature Key, Label Key, English Text, or Arabic Text.</p>
+                  <div>
+                    <h2 id="labelsPageTitle">All Labels</h2>
+                    <p id="labelsPageDescription">Search all labels by Label ID, Feature Key, Label Key, English Text, or Arabic Text.</p>
+                  </div>
+                  <button id="labelsPageExport" class="primary-button" type="button">Export All Labels</button>
                 </div>
                 <label class="labels-search-field">Search (Global)<input id="globalSearch" type="search" placeholder="Search across all fields..." /></label>
                 <label class="labels-search-field">Feature Key<input id="featureKeySearch" type="search" placeholder="Search Feature Key..." /></label>
@@ -118,10 +126,12 @@
                         <th>Status</th>
                         <th>First Seen</th>
                         <th>Change</th>
+                        <th>Actor Role</th>
+                        <th>Changed By</th>
                         <th>Action</th>
                       </tr>
                     </thead>
-                    <tbody id="labelsBody"><tr><td colspan="10" class="empty-row">Loading labels...</td></tr></tbody>
+                    <tbody id="labelsBody"><tr><td colspan="12" class="empty-row">Loading labels...</td></tr></tbody>
                   </table>
                 </div>
               </section>
@@ -271,6 +281,17 @@
         <section id="settings" class="page simple-page"><h2>Settings</h2><div class="simple-card">Local labels dashboard on port 4555.</div></section>
         <section id="audit" class="page simple-page">
           <h2>Content History</h2>
+          <div class="history-connection simple-card">
+            <div>
+              <h3>Strapi History Connection</h3>
+              <p id="historyConnectionStatus">Connect your Strapi admin account to fetch revision dates and user names.</p>
+            </div>
+            <label>Email<input id="historyAdminEmail" type="email" autocomplete="username" placeholder="name@stc.com.kw" /></label>
+            <label>Password<input id="historyAdminPassword" type="password" autocomplete="current-password" placeholder="Strapi password" /></label>
+            <button id="historyConnectButton" class="ghost-button" type="button">Connect</button>
+            <button id="historySyncButton" class="primary-button" type="button" disabled>Sync Strapi History</button>
+            <button id="historyDisconnectButton" class="ghost-button" type="button" hidden>Disconnect</button>
+          </div>
           <div class="history-controls simple-card">
             <label>Search History<input id="historySearch" type="search" placeholder="Search feature, label, updater, status..." /></label>
             <label>Feature Key<select id="historyFeatureFilter"><option value="all">All</option></select></label>
@@ -282,6 +303,15 @@
                 <option value="Removed">Removed</option>
               </select>
             </label>
+            <label>Source
+              <select id="historySourceFilter">
+                <option value="Strapi Content History" selected>Strapi Content History</option>
+                <option value="Dashboard snapshot comparison">Dashboard Snapshot</option>
+                <option value="all">All Sources</option>
+              </select>
+            </label>
+            <label>From Date<input id="historyDateFrom" type="date" /></label>
+            <label>To Date<input id="historyDateTo" type="date" /></label>
           </div>
           <div id="auditContent" class="simple-card"></div>
         </section>
