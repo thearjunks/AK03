@@ -7,6 +7,9 @@ import express from "express";
 import ExcelJS from "exceljs";
 import PDFDocument from "pdfkit";
 
+if (process.env.DASHBOARD_APP !== "devices") {
+  await import("./labels-server.js");
+} else {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, "data");
 const EXPORT_DIR = path.join(__dirname, "outputs", "dashboard-downloads");
@@ -1115,3 +1118,4 @@ const port = Number(process.env.PORT || 4321);
 app.listen(port, () => {
   console.log(`STC Device Asset Dashboard running at http://localhost:${port}`);
 });
+}
