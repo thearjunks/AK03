@@ -1,0 +1,217 @@
+:root {
+  --stc-purple: #4f008c;
+  --stc-purple-dark: #30005f;
+  --stc-magenta: #ff375e;
+  --ink: #17152f;
+  --muted: #6c6786;
+  --line: #e8e2f0;
+  --surface: #ffffff;
+  font-family: "Inter", "Segoe UI", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+  background: #f5f3f8;
+  color: var(--ink);
+}
+button,
+input {
+  font: inherit;
+}
+.login-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: minmax(320px, 42%) 1fr;
+}
+.brand-panel {
+  min-height: 100vh;
+  padding: clamp(34px, 6vw, 76px);
+  background: var(--stc-purple-dark);
+  color: white;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 50px;
+  position: relative;
+  overflow: hidden;
+}
+.brand-panel::after {
+  content: "";
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  right: -110px;
+  bottom: 12%;
+  border: 42px solid rgba(255, 255, 255, 0.08);
+  transform: rotate(18deg);
+  pointer-events: none;
+}
+.brand-mark {
+  width: max-content;
+  font-size: 52px;
+  line-height: 0.82;
+  font-weight: 850;
+  letter-spacing: 0;
+}
+.brand-mark span {
+  display: block;
+  margin: 12px 0 0 42px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.eyebrow {
+  margin: 0 0 12px;
+  color: var(--stc-magenta);
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+.brand-panel h1 {
+  margin: 0;
+  max-width: 560px;
+  font-size: clamp(42px, 5vw, 72px);
+  line-height: 1;
+  letter-spacing: 0;
+}
+.brand-copy {
+  margin: 24px 0 0;
+  max-width: 540px;
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 17px;
+  line-height: 1.7;
+}
+.brand-footer {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  font-weight: 650;
+}
+.form-panel {
+  min-height: 100vh;
+  padding: 32px;
+  display: grid;
+  place-items: center;
+}
+.login-form {
+  width: min(440px, 100%);
+  padding: 42px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 22px 60px rgba(42, 17, 74, 0.12);
+}
+.form-heading {
+  margin-bottom: 32px;
+}
+.form-heading h2 {
+  margin: 0;
+  color: var(--stc-purple);
+  font-size: 34px;
+  line-height: 1.15;
+}
+.form-heading > p:last-child {
+  margin: 12px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+.login-form > label {
+  display: block;
+  margin: 18px 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+.login-form input {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid #cec4db;
+  border-radius: 7px;
+  color: var(--ink);
+  background: white;
+  outline: none;
+}
+.login-form input:focus {
+  border-color: var(--stc-purple);
+  box-shadow: 0 0 0 3px rgba(79, 0, 140, 0.11);
+}
+.password-field {
+  position: relative;
+}
+.password-field input {
+  padding-right: 70px;
+}
+.password-field button {
+  position: absolute;
+  right: 7px;
+  top: 7px;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 0;
+  background: #f2edf7;
+  color: var(--stc-purple);
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
+}
+.login-error {
+  margin: 18px 0 0;
+  padding: 11px 12px;
+  border-left: 3px solid var(--stc-magenta);
+  background: #fff0f3;
+  color: #9f1239;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.login-button {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 22px;
+  border: 1px solid var(--stc-purple);
+  border-radius: 7px;
+  background: var(--stc-purple);
+  color: white;
+  font-weight: 850;
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+.login-button:hover {
+  background: #6300ad;
+  transform: translateY(-1px);
+}
+.login-button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+  transform: none;
+}
+
+@media (max-width: 760px) {
+  .login-shell {
+    grid-template-columns: 1fr;
+  }
+  .brand-panel {
+    min-height: auto;
+    padding: 30px 24px;
+    gap: 34px;
+  }
+  .brand-panel h1 {
+    font-size: 40px;
+  }
+  .brand-copy,
+  .brand-footer {
+    display: none;
+  }
+  .form-panel {
+    min-height: auto;
+    padding: 28px 18px;
+  }
+  .login-form {
+    padding: 30px 24px;
+  }
+}

@@ -7,6 +7,11 @@ import express from "express";
 import ExcelJS from "exceljs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+try {
+  process.loadEnvFile?.(path.join(__dirname, ".env"));
+} catch (error) {
+  if (error.code !== "ENOENT") throw error;
+}
 const DATA_PATH = path.join(__dirname, "data", "label-state.json");
 const ADMIN_SUPPLEMENT_PATH = path.join(__dirname, "data", "admin-label-supplement.json");
 const EXPORT_DIR = path.join(__dirname, "outputs", "dashboard-downloads");
@@ -17,6 +22,14 @@ const STRAPI_CONTENT_MANAGER = "https://content.stc.com.kw/content-manager";
 const STRAPI_LABEL_UID = "api::stc-label.stc-label";
 const ENV_ADMIN_TOKEN = process.env.STRAPI_ADMIN_TOKEN || "";
 const adminSessions = new Map();
+const dashboardSessions = new Map();
+const dashboardLoginAttempts = new Map();
+const DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME || "";
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || "";
+const DASHBOARD_SESSION_COOKIE = "ak_labels_dashboard_session";
+const DASHBOARD_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
 const PAGE_SIZE = 25;
 const FETCH_PAGE_SIZE = 100;
 const HISTORY_RETENTION_DAYS = 7;
@@ -54,7 +67,6 @@ const APPROVED_MODIFIER_NAMES = new Set([
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
-app.use(express.static(path.join(__dirname, "public-labels")));
 
 function text(value) {
   return String(value ?? "");
@@ -67,6 +79,112 @@ function nowIso() {
 function hash(value, length = 12) {
   return crypto.createHash("sha256").update(text(value)).digest("hex").slice(0, length).toUpperCase();
 }
+
+function cookieValue(req, name) {
+  const cookies = text(req.headers.cookie).split(";").map((item) => item.trim());
+  const match = cookies.find((item) => item.startsWith(`${name}=`));
+  return match ? decodeURIComponent(match.slice(match.indexOf("=") + 1)) : "";
+}
+
+function secureRequest(req) {
+  return req.secure || text(req.headers["x-forwarded-proto"]).split(",")[0].trim() === "https";
+}
+
+function dashboardCookie(req, token, maxAgeSeconds) {
+  const parts = [
+    `${DASHBOARD_SESSION_COOKIE}=${encodeURIComponent(token)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Strict",
+    `Max-Age=${maxAgeSeconds}`,
+  ];
+  if (secureRequest(req)) parts.push("Secure");
+  return parts.join("; ");
+}
+
+function safeCredentialMatch(actual, expected) {
+  const actualBuffer = Buffer.from(text(actual));
+  const expectedBuffer = Buffer.from(text(expected));
+  return actualBuffer.length === expectedBuffer.length && crypto.timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+function dashboardSession(req) {
+  const token = cookieValue(req, DASHBOARD_SESSION_COOKIE);
+  const session = dashboardSessions.get(token);
+  if (!session) return null;
+  if (session.expiresAt <= Date.now()) {
+    dashboardSessions.delete(token);
+    return null;
+  }
+  return session;
+}
+
+function loginAttemptKey(req) {
+  return text(req.headers["x-forwarded-for"]).split(",")[0].trim() || req.socket.remoteAddress || "unknown";
+}
+
+function failedLoginState(req) {
+  const key = loginAttemptKey(req);
+  const current = dashboardLoginAttempts.get(key);
+  if (!current || current.windowStartedAt + LOGIN_WINDOW_MS <= Date.now()) {
+    const fresh = { count: 0, windowStartedAt: Date.now() };
+    dashboardLoginAttempts.set(key, fresh);
+    return { key, state: fresh };
+  }
+  return { key, state: current };
+}
+
+app.get("/login", (_req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.sendFile(path.join(__dirname, "public-labels", "login.html"));
+});
+app.get("/login-styles.css", (_req, res) => res.sendFile(path.join(__dirname, "public-labels", "login-styles.css")));
+app.get("/login.js", (_req, res) => res.sendFile(path.join(__dirname, "public-labels", "login.js")));
+app.get("/favicon.ico", (_req, res) => res.status(204).end());
+
+app.get("/api/dashboard-session", (req, res) => {
+  const session = dashboardSession(req);
+  res.setHeader("Cache-Control", "no-store");
+  res.json({ authenticated: Boolean(session), username: session?.username || "" });
+});
+
+app.post("/api/dashboard-login", (req, res) => {
+  if (!DASHBOARD_USERNAME || !DASHBOARD_PASSWORD) {
+    return res.status(503).json({ error: "Dashboard login is not configured on this server." });
+  }
+  const attempt = failedLoginState(req);
+  if (attempt.state.count >= MAX_LOGIN_ATTEMPTS) {
+    return res.status(429).json({ error: "Too many failed attempts. Try again in 15 minutes." });
+  }
+
+  const username = text(req.body?.username).trim();
+  const password = text(req.body?.password);
+  if (!safeCredentialMatch(username, DASHBOARD_USERNAME) || !safeCredentialMatch(password, DASHBOARD_PASSWORD)) {
+    attempt.state.count += 1;
+    return res.status(401).json({ error: "Incorrect username or password." });
+  }
+
+  dashboardLoginAttempts.delete(attempt.key);
+  const token = crypto.randomBytes(32).toString("base64url");
+  dashboardSessions.set(token, { username: DASHBOARD_USERNAME, expiresAt: Date.now() + DASHBOARD_SESSION_TTL_MS });
+  res.setHeader("Set-Cookie", dashboardCookie(req, token, Math.floor(DASHBOARD_SESSION_TTL_MS / 1000)));
+  res.json({ ok: true, username: DASHBOARD_USERNAME });
+});
+
+app.post("/api/dashboard-logout", (req, res) => {
+  dashboardSessions.delete(cookieValue(req, DASHBOARD_SESSION_COOKIE));
+  res.setHeader("Set-Cookie", dashboardCookie(req, "", 0));
+  res.json({ ok: true });
+});
+
+app.use((req, res, next) => {
+  if (dashboardSession(req)) return next();
+  if (req.path.startsWith("/api/")) return res.status(401).json({ error: "Login required." });
+  const nextPath = req.originalUrl.startsWith("/") ? req.originalUrl : "/dashboard";
+  return res.redirect(302, `/login?next=${encodeURIComponent(nextPath)}`);
+});
+
+app.use(express.static(path.join(__dirname, "public-labels")));
 
 async function writeState(state) {
   await fs.mkdir(path.dirname(DATA_PATH), { recursive: true });
@@ -141,9 +259,7 @@ function postJson(url, payload, headers = {}) {
 }
 
 function requestSessionId(req) {
-  const cookies = text(req.headers.cookie).split(";").map((item) => item.trim());
-  const match = cookies.find((item) => item.startsWith("ak_labels_admin_session="));
-  return match ? decodeURIComponent(match.slice(match.indexOf("=") + 1)) : "";
+  return cookieValue(req, "ak_labels_admin_session");
 }
 
 function adminToken(req) {

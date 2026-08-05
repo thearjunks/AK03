@@ -22,6 +22,11 @@ npm.cmd start
 
 Open <http://localhost:4555/dashboard>.
 
+Dashboard pages, exports, and API routes require login. Create a local `.env`
+file from `.env.example` and set `DASHBOARD_USERNAME` and
+`DASHBOARD_PASSWORD`. The session expires after 12 hours, and failed login
+attempts are rate limited.
+
 The production `start` command also launches this dashboard and uses the
 `PORT` environment variable supplied by the hosting platform.
 
@@ -46,6 +51,11 @@ The workflow is `.github/workflows/scheduled-labels-deployment.yml`. It fetches 
 
 Add this encrypted repository secret under **GitHub > Settings > Secrets and variables > Actions** before the first scheduled run:
 
+- `DASHBOARD_PASSWORD`: the password used by the protected dashboard
 - `SMTP_PASSWORD`: a Gmail app password for `thearjunks@gmail.com`
+
+Set matching `DASHBOARD_USERNAME` and `DASHBOARD_PASSWORD` environment
+variables in Hostinger so the production dashboard and scheduled verification
+use the same credentials.
 
 Notifications are sent to `thearjunks@gmail.com` for fetch success, fetch failure, deployment success, and deployment failure. Failure emails include the available response and runtime logs.

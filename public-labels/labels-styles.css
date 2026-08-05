@@ -58,6 +58,7 @@ button { cursor: pointer; }
 .last-fetch { color: #36314f; font-size: 13px; }
 .primary-button { border-color: var(--stc-purple); background: var(--stc-purple); color: white; box-shadow: 0 10px 24px rgba(79,0,140,.2); }
 .ghost-button:hover, .primary-button:hover { transform: translateY(-1px); transition: .18s ease; }
+.logout-button { color: #9f1239; border-color: #f1c7d1; }
 
 .page { display: none; }
 .active-page { display: block; }

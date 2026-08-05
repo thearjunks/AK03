@@ -21,6 +21,8 @@ jobs:
       NOTIFICATION_EMAIL: thearjunks@gmail.com
       SMTP_USERNAME: thearjunks@gmail.com
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      DASHBOARD_USERNAME: AK
+      DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
       NODE_OPTIONS: --use-system-ca
 
     steps:
@@ -43,12 +45,18 @@ jobs:
         if: env.SMTP_PASSWORD == ''
         run: echo "::warning::Email notifications require the SMTP_PASSWORD repository secret."
 
+      - name: Check dashboard login configuration
+        if: env.DASHBOARD_PASSWORD == ''
+        run: |
+          echo "::error::Dashboard automation requires the DASHBOARD_PASSWORD repository secret."
+          exit 1
+
       - name: Start labels service
         run: |
           PORT=4555 node labels-server.js > labels-server.log 2>&1 &
           echo $! > labels-server.pid
           for attempt in {1..30}; do
-            if curl --fail --silent http://127.0.0.1:4555/api/status > /dev/null; then
+            if curl --fail --silent http://127.0.0.1:4555/api/dashboard-session > /dev/null; then
               exit 0
             fi
             sleep 2
@@ -60,9 +68,18 @@ jobs:
         id: fetch
         continue-on-error: true
         run: |
+          login_payload=$(node -e 'process.stdout.write(JSON.stringify({ username: process.env.DASHBOARD_USERNAME, password: process.env.DASHBOARD_PASSWORD }))')
+          login_code=$(curl --silent --show-error --output login-response.json --write-out "%{http_code}" \
+            --cookie-jar dashboard-cookie.txt --header "Content-Type: application/json" \
+            --data "$login_payload" http://127.0.0.1:4555/api/dashboard-login)
+          if [ "$login_code" != "200" ]; then
+            echo "error=Dashboard login failed with HTTP $login_code." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+
           set +e
           http_code=$(curl --silent --show-error --output fetch-response.json --write-out "%{http_code}" \
-            --request POST http://127.0.0.1:4555/api/fetch)
+            --cookie dashboard-cookie.txt --request POST http://127.0.0.1:4555/api/fetch)
           curl_exit=$?
           set -e
 
@@ -133,9 +150,19 @@ jobs:
           EXPECTED_ACTIVE: ${{ steps.fetch.outputs.active }}
         run: |
           : > deployment-check.log
+          login_payload=$(node -e 'process.stdout.write(JSON.stringify({ username: process.env.DASHBOARD_USERNAME, password: process.env.DASHBOARD_PASSWORD }))')
           for attempt in {1..40}; do
             timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            login_code=$(curl --silent --show-error --output production-login.json --write-out "%{http_code}" \
+              --cookie-jar production-cookie.txt --header "Content-Type: application/json" \
+              --data "$login_payload" "https://labels.stcdigitalhub.com/api/dashboard-login" || true)
+            if [ "$login_code" != "200" ]; then
+              echo "$timestamp attempt=$attempt login_http=$login_code" | tee -a deployment-check.log
+              sleep 15
+              continue
+            fi
             http_code=$(curl --silent --show-error --output production-status.json --write-out "%{http_code}" \
+              --cookie production-cookie.txt \
               "https://labels.stcdigitalhub.com/api/status?automation=$GITHUB_RUN_ID-$attempt" || true)
             echo "$timestamp attempt=$attempt http=$http_code" | tee -a deployment-check.log
 
@@ -148,6 +175,7 @@ jobs:
           NODE
             then
               route_code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+                --cookie production-cookie.txt \
                 "https://labels.stcdigitalhub.com/labels?automation=$GITHUB_RUN_ID")
               if [ "$route_code" = "200" ]; then
                 echo "Production is serving snapshot $EXPECTED_FETCHED_AT." | tee -a deployment-check.log

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign in | AK stc labels</title>
+    <link rel="stylesheet" href="/login-styles.css" />
+  </head>
+  <body>
+    <main class="login-shell">
+      <section class="brand-panel" aria-label="AK stc labels">
+        <div class="brand-mark">stc<span>Kuwait</span></div>
+        <div>
+          <p class="eyebrow">Label management workspace</p>
+          <h1>AK stc labels</h1>
+          <p class="brand-copy">
+            Secure access to application labels, language checks, snapshots,
+            reports, and content history.
+          </p>
+        </div>
+        <p class="brand-footer">stc Kuwait internal dashboard</p>
+      </section>
+
+      <section class="form-panel">
+        <form id="loginForm" class="login-form" novalidate>
+          <div class="form-heading">
+            <p class="eyebrow">Secure access</p>
+            <h2>Sign in</h2>
+            <p>Enter your dashboard credentials to continue.</p>
+          </div>
+
+          <label for="username">Username</label>
+          <input
+            id="username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            required
+            autofocus
+          />
+
+          <label for="password">Password</label>
+          <div class="password-field">
+            <input
+              id="password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              required
+            />
+            <button
+              id="togglePassword"
+              type="button"
+              aria-label="Show password"
+            >
+              Show
+            </button>
+          </div>
+
+          <p id="loginError" class="login-error" role="alert" hidden></p>
+          <button id="loginButton" class="login-button" type="submit">
+            Sign in
+          </button>
+        </form>
+      </section>
+    </main>
+    <script src="/login.js"></script>
+  </body>
+</html>

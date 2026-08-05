@@ -63,6 +63,7 @@ const els = {
   lastFetch: $("lastFetch"),
   fetchButton: $("fetchButton"),
   refreshButton: $("refreshButton"),
+  logoutButton: $("logoutButton"),
   downloadExcel: $("downloadExcel"),
   downloadExcel2: $("downloadExcel2"),
   stats: {
@@ -196,8 +197,22 @@ function toast(message) {
 async function api(path, options) {
   const response = await fetch(path, options);
   const json = await response.json().catch(() => ({}));
+  if (response.status === 401) {
+    const next = `${window.location.pathname}${window.location.search}`;
+    window.location.assign(`/login?next=${encodeURIComponent(next)}`);
+    throw new Error("Your session has expired. Please log in again.");
+  }
   if (!response.ok) throw new Error(json.error || `Request failed: ${response.status}`);
   return json;
+}
+
+async function logout() {
+  els.logoutButton.disabled = true;
+  try {
+    await fetch("/api/dashboard-logout", { method: "POST" });
+  } finally {
+    window.location.assign("/login");
+  }
 }
 
 function queryParams(includePaging = true) {
@@ -963,6 +978,7 @@ els.prevPage.addEventListener("click", () => { if (state.page > 1) { state.page 
 els.nextPage.addEventListener("click", () => { if (state.page * state.pageSize < state.total) { state.page += 1; loadLabels().catch((error) => toast(error.message)); } });
 els.fetchButton.addEventListener("click", fetchLabels);
 els.refreshButton.addEventListener("click", () => loadStatus().then(loadLabels).then(loadLanguageConsistency).catch((error) => toast(error.message)));
+els.logoutButton.addEventListener("click", logout);
 els.downloadExcel.addEventListener("click", downloadExcel);
 els.downloadExcel2.addEventListener("click", downloadExcel);
 els.labelsPageExport.addEventListener("click", downloadExcel);
