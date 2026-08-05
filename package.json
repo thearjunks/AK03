@@ -7,7 +7,7 @@
     "start": "node labels-server.js",
     "dev": "node labels-server.js",
     "start:labels": "set NODE_OPTIONS=--use-system-ca&& set PORT=4555&& node labels-server.js",
-    "start:devices": "set DASHBOARD_APP=devices&& node server.js"
+    "start:devices": "node device-server.js"
   },
   "dependencies": {
     "exceljs": "^4.4.0",
