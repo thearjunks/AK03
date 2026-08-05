@@ -1,0 +1,195 @@
+name: Scheduled labels fetch and deployment
+
+on:
+  schedule:
+    # Kuwait is UTC+3. Run Sunday-Thursday at 10:00 and 15:00 Kuwait time.
+    - cron: "0 7,12 * * 0-4"
+  workflow_dispatch:
+
+concurrency:
+  group: scheduled-labels-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      NOTIFICATION_EMAIL: thearjunks@gmail.com
+      SMTP_USERNAME: thearjunks@gmail.com
+      SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+      NODE_OPTIONS: --use-system-ca
+
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check email configuration
+        if: env.SMTP_PASSWORD == ''
+        run: echo "::warning::Email notifications require the SMTP_PASSWORD repository secret."
+
+      - name: Start labels service
+        run: |
+          PORT=4555 node labels-server.js > labels-server.log 2>&1 &
+          echo $! > labels-server.pid
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:4555/api/status > /dev/null; then
+              exit 0
+            fi
+            sleep 2
+          done
+          cat labels-server.log
+          exit 1
+
+      - name: Fetch latest Strapi labels
+        id: fetch
+        continue-on-error: true
+        run: |
+          set +e
+          http_code=$(curl --silent --show-error --output fetch-response.json --write-out "%{http_code}" \
+            --request POST http://127.0.0.1:4555/api/fetch)
+          curl_exit=$?
+          set -e
+
+          if [ "$curl_exit" -ne 0 ] || [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
+            echo "error=Strapi fetch failed with curl exit $curl_exit and HTTP $http_code." >> "$GITHUB_OUTPUT"
+            cat fetch-response.json 2>/dev/null || true
+            exit 1
+          fi
+
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const response = JSON.parse(fs.readFileSync("fetch-response.json", "utf8"));
+          if (!response.snapshot?.fetchedAt || !response.totals) {
+            throw new Error("The fetch response did not contain a valid snapshot and totals.");
+          }
+          const output = process.env.GITHUB_OUTPUT;
+          fs.appendFileSync(output, `fetched_at=${response.snapshot.fetchedAt}\n`);
+          fs.appendFileSync(output, `active=${response.totals.total}\n`);
+          fs.appendFileSync(output, `new=${response.totals.new}\n`);
+          fs.appendFileSync(output, `modified=${response.totals.modified}\n`);
+          fs.appendFileSync(output, `removed=${response.totals.removed}\n`);
+          fs.appendFileSync(output, `feature_entries=${response.totals.featureEntries}\n`);
+          NODE
+
+      - name: Email data fetch success
+        if: steps.fetch.outcome == 'success' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: Data Fetch
+          EMAIL_STATUS: Success
+          EMAIL_DETAILS: >-
+            Fetch completed successfully. Active labels: ${{ steps.fetch.outputs.active }};
+            New: ${{ steps.fetch.outputs.new }}; Modified: ${{ steps.fetch.outputs.modified }};
+            Removed: ${{ steps.fetch.outputs.removed }}; Feature entries: ${{ steps.fetch.outputs.feature_entries }};
+            Snapshot: ${{ steps.fetch.outputs.fetched_at }}.
+          EMAIL_ATTACHMENTS: fetch-response.json
+        run: node scripts/send-automation-email.mjs
+
+      - name: Email data fetch failure
+        if: steps.fetch.outcome == 'failure' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: Data Fetch
+          EMAIL_STATUS: Failure
+          EMAIL_DETAILS: ${{ steps.fetch.outputs.error || 'The Strapi fetch failed. See the attached response and service log.' }}
+          EMAIL_ATTACHMENTS: fetch-response.json,labels-server.log
+        run: node scripts/send-automation-email.mjs
+
+      - name: Stop after fetch failure
+        if: steps.fetch.outcome == 'failure'
+        run: exit 1
+
+      - name: Commit and push fetched snapshot
+        id: publish
+        run: |
+          git config user.name "AK stc Labels Automation"
+          git config user.email "thearjunks@gmail.com"
+          git add data/label-state.json
+          git commit --allow-empty -m "Automated labels fetch ${{ steps.fetch.outputs.fetched_at }}"
+          git push origin HEAD:main
+          echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Hostinger deployment
+        id: deployment
+        continue-on-error: true
+        env:
+          EXPECTED_FETCHED_AT: ${{ steps.fetch.outputs.fetched_at }}
+          EXPECTED_ACTIVE: ${{ steps.fetch.outputs.active }}
+        run: |
+          : > deployment-check.log
+          for attempt in {1..40}; do
+            timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+            http_code=$(curl --silent --show-error --output production-status.json --write-out "%{http_code}" \
+              "https://labels.stcdigitalhub.com/api/status?automation=$GITHUB_RUN_ID-$attempt" || true)
+            echo "$timestamp attempt=$attempt http=$http_code" | tee -a deployment-check.log
+
+            if [ "$http_code" = "200" ] && node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          const status = JSON.parse(fs.readFileSync("production-status.json", "utf8"));
+          const matches = status.lastSnapshot?.fetchedAt === process.env.EXPECTED_FETCHED_AT
+            && Number(status.totals?.total) === Number(process.env.EXPECTED_ACTIVE);
+          process.exit(matches ? 0 : 1);
+          NODE
+            then
+              route_code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+                "https://labels.stcdigitalhub.com/labels?automation=$GITHUB_RUN_ID")
+              if [ "$route_code" = "200" ]; then
+                echo "Production is serving snapshot $EXPECTED_FETCHED_AT." | tee -a deployment-check.log
+                exit 0
+              fi
+            fi
+            sleep 15
+          done
+
+          echo "error=Hostinger did not serve snapshot $EXPECTED_FETCHED_AT within 10 minutes." >> "$GITHUB_OUTPUT"
+          exit 1
+
+      - name: Email deployment success
+        if: steps.deployment.outcome == 'success' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: Deployment
+          EMAIL_STATUS: Success
+          EMAIL_DETAILS: >-
+            Hostinger deployment completed successfully for commit ${{ steps.publish.outputs.commit }}.
+            Production is serving snapshot ${{ steps.fetch.outputs.fetched_at }} with
+            ${{ steps.fetch.outputs.active }} active labels and ${{ steps.fetch.outputs.removed }} removed labels.
+          EMAIL_ATTACHMENTS: deployment-check.log
+        run: node scripts/send-automation-email.mjs
+
+      - name: Email deployment failure
+        if: steps.deployment.outcome == 'failure' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: Deployment
+          EMAIL_STATUS: Failure
+          EMAIL_DETAILS: ${{ steps.deployment.outputs.error || 'The Hostinger deployment verification failed. See the attached logs.' }}
+          EMAIL_ATTACHMENTS: deployment-check.log,production-status.json,labels-server.log
+        run: node scripts/send-automation-email.mjs
+
+      - name: Stop after deployment failure
+        if: steps.deployment.outcome == 'failure'
+        run: exit 1
+
+      - name: Stop labels service
+        if: always()
+        run: |
+          if [ -f labels-server.pid ]; then
+            kill "$(cat labels-server.pid)" 2>/dev/null || true
+          fi
