@@ -1955,7 +1955,14 @@ app.get([
 });
 
 const port = Number(process.env.PORT) || 4555;
-await writeState(await readState());
-app.listen(port, () => {
-  console.log(`AK stc labels dashboard running at http://localhost:${port}`);
+async function startServer() {
+  await writeState(await readState());
+  app.listen(port, () => {
+    console.log(`AK stc labels dashboard running at http://localhost:${port}`);
+  });
+}
+
+startServer().catch((error) => {
+  console.error("Failed to start AK stc labels dashboard:", error);
+  process.exitCode = 1;
 });
