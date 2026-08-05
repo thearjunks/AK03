@@ -17,15 +17,18 @@ npm.cmd install
 ## Start the labels dashboard
 
 ```powershell
-npm.cmd run start:labels
+npm.cmd start
 ```
 
 Open <http://localhost:4555/dashboard>.
 
+The production `start` command also launches this dashboard and uses the
+`PORT` environment variable supplied by the hosting platform.
+
 ## Start the devices and labs dashboard
 
 ```powershell
-npm.cmd start
+npm.cmd run start:devices
 ```
 
 Open <http://localhost:4321/>.
