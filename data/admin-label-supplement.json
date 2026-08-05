@@ -1,0 +1,335 @@
+{
+  "capturedAt": "2026-07-27T13:42:29.415Z",
+  "source": "authenticated Strapi Admin",
+  "inventoryCount": 69,
+  "entries": [
+    {
+      "id": "1611",
+      "documentId": "n36ntrncvcnt8mdj558jveqk",
+      "featureName": "authKMID",
+      "featureKey": "authKMID",
+      "locale": "en",
+      "createdAt": "2026-07-27T13:42:29.415Z",
+      "updatedAt": "2026-07-27T13:42:29.415Z",
+      "adminStatus": "Draft",
+      "KeyValuePairComponent": []
+    },
+    {
+      "id": "1343",
+      "documentId": "wyu3k34kcxgpep91nufiuecf",
+      "featureName": "test-av",
+      "featureKey": "test",
+      "locale": "en",
+      "createdAt": "2026-07-27T13:42:29.415Z",
+      "updatedAt": "2026-07-27T13:42:29.415Z",
+      "adminStatus": "Draft",
+      "KeyValuePairComponent": [
+        {
+          "id": "admin-wyu3k34kcxgpep91nufiuecf-0",
+          "key": "test",
+          "enValue": "",
+          "arValue": ""
+        }
+      ]
+    },
+    {
+      "id": "1287",
+      "documentId": "j6tdlv4xpgzs8b7avrlpi1uq",
+      "featureName": "pre2post",
+      "featureKey": "pre2post",
+      "locale": "en",
+      "createdAt": "2026-07-27T13:42:29.415Z",
+      "updatedAt": "2026-07-27T13:42:29.415Z",
+      "adminStatus": "Draft",
+      "KeyValuePairComponent": [
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-0",
+          "key": "chooseYourPlan",
+          "enValue": "Choose Your Plan",
+          "arValue": "اختر باقتك"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-1",
+          "key": "availablePlans",
+          "enValue": "Available plans for",
+          "arValue": "الباقات المتاحة لـ"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-2",
+          "key": "moreDetails",
+          "enValue": "More details",
+          "arValue": "المزيد من التفاصيل"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-3",
+          "key": "select",
+          "enValue": "Select",
+          "arValue": "اختر"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-4",
+          "key": "continue",
+          "enValue": "Continue",
+          "arValue": "المتابعة"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-5",
+          "key": "offers",
+          "enValue": "Offers",
+          "arValue": "العروض"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-6",
+          "key": "authenticate",
+          "enValue": "Authenticate",
+          "arValue": "التحقق"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-7",
+          "key": "confirm",
+          "enValue": "Confirm",
+          "arValue": "تأكيد"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-8",
+          "key": "recommended",
+          "enValue": "Recommended",
+          "arValue": "موصى به"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-9",
+          "key": "allOffers",
+          "enValue": "All Offers",
+          "arValue": "جميع العروض"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-10",
+          "key": "title",
+          "enValue": "Postpaid offers for You",
+          "arValue": "عروض الدفع الآجل لك"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-11",
+          "key": "description",
+          "enValue": "Browse the available plans and choose the one that fits your needs.",
+          "arValue": "تصفح الباقات المتاحة واختر الباقة التي تناسب احتياجاتك."
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-12",
+          "key": "unit",
+          "enValue": "mo",
+          "arValue": "شهر"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-13",
+          "key": "months",
+          "enValue": "months",
+          "arValue": "أشهر"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-14",
+          "key": "balanceDescription",
+          "enValue": "Your remaining balance of KD {balance} will be added to your next postpaid bill.",
+          "arValue": "سيتم إضافة رصيدك المتبقي البالغ {balance} د.ك إلى فاتورة الدفع الآجل القادمة."
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-15",
+          "key": "activateNow",
+          "enValue": "Activate Now",
+          "arValue": "فعّل الآن"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-16",
+          "key": "successTitle",
+          "enValue": "Activated Successfully!",
+          "arValue": "تم التفعيل بنجاح!"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-17",
+          "key": "confirmationMessage",
+          "enValue": "You have successfully converted your line to postpaid and activated ‘{planName}’",
+          "arValue": "(Ar) You have successfully converted your line to postpaid and activated ‘{planName}’"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-18",
+          "key": "instructions",
+          "enValue": "For more details use mystc app to access information of your line.",
+          "arValue": "لمزيد من التفاصيل، استخدم تطبيق mystc للوصول إلى معلومات خطك."
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-19",
+          "key": "close",
+          "enValue": "Close",
+          "arValue": "إغلاق"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-20",
+          "key": "requestFailed",
+          "enValue": "Failed!",
+          "arValue": "فشل!"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-21",
+          "key": "someThingWentWrong",
+          "enValue": "Something went wrong. Please try again later",
+          "arValue": "حدث خطأ ما. يرجى المحاولة مرة أخرى لاحقًا"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-22",
+          "key": "remainingBalance",
+          "enValue": "Your remaining balance of",
+          "arValue": "رصيدك المتبقي هو"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-23",
+          "key": "billAdd",
+          "enValue": "Will be added to your next postpaid bill",
+          "arValue": "سيتم إضافته إلى فاتورتك الآجلة القادمة"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-24",
+          "key": "balanceNotAvailable",
+          "enValue": "Balance not available",
+          "arValue": "الرصيد غير متوفر"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-25",
+          "key": "simType",
+          "enValue": "SIM TYPE",
+          "arValue": "نوع الشريحة"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-26",
+          "key": "existingSim",
+          "enValue": "Existing SIM",
+          "arValue": "الشريحة الحالية"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-27",
+          "key": "old",
+          "enValue": "Old",
+          "arValue": "قديم"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-28",
+          "key": "new",
+          "enValue": "New",
+          "arValue": "جديد"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-29",
+          "key": "civilId",
+          "enValue": "Civil ID No",
+          "arValue": "رقم البطاقة المدنية"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-30",
+          "key": "name",
+          "enValue": "Name",
+          "arValue": "الاسم"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-31",
+          "key": "nationality",
+          "enValue": "Nationality",
+          "arValue": "الجنسية"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-32",
+          "key": "idExpiry",
+          "enValue": "ID Expiry",
+          "arValue": "تاريخ انتهاء الهوية"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-33",
+          "key": "email",
+          "enValue": "Email",
+          "arValue": "البريد الإلكتروني"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-34",
+          "key": "monthlyPayment",
+          "enValue": "Monthly payments",
+          "arValue": "الدفعات الشهرية"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-35",
+          "key": "total",
+          "enValue": "Total",
+          "arValue": "الإجمالي"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-36",
+          "key": "orderSummary",
+          "enValue": "Order summary",
+          "arValue": "ملخص الطلب"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-37",
+          "key": "agreeTAndC",
+          "enValue": "I have read and agreed to the",
+          "arValue": "لقد قرأت ووافقت على"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-38",
+          "key": "tAndC",
+          "enValue": "Terms & Conditions",
+          "arValue": "الشروط والأحكام"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-39",
+          "key": "freeServices",
+          "enValue": "Free Services",
+          "arValue": "Ar Free Services"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-40",
+          "key": "civilIdMismatchTitle",
+          "enValue": "Civil ID Mismatch!",
+          "arValue": "Ar Civil ID Mismatch!"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-41",
+          "key": "civilIdMismatchSubtitle",
+          "enValue": "We were unable to continue with the information provided",
+          "arValue": "Ar We were unable to continue with the information provided"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-42",
+          "key": "civilIdMismatchDescription",
+          "enValue": "Kindly ensure you are using the Kuwait Mobile ID app associated with the Civil ID linked to your stc account then try again.",
+          "arValue": "Ar Kindly ensure you are using the Kuwait Mobile ID app associated with the Civil ID linked to your stc account then try again."
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-43",
+          "key": "civilIdMismatchDescription2",
+          "enValue": "For assistance, please visit your nearest branch, call 102 or contact us on WhatsApp at wa.me/96550056102 if you are outside Kuwait.",
+          "arValue": "Ar For assistance, please visit your nearest branch, call 102 or contact us on WhatsApp at wa.me/96550056102 if you are outside Kuwait."
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-44",
+          "key": "yourDetails",
+          "enValue": "Your details",
+          "arValue": "Ar Your details"
+        },
+        {
+          "id": "admin-j6tdlv4xpgzs8b7avrlpi1uq-45",
+          "key": "mo",
+          "enValue": "mo",
+          "arValue": "(Ar) mo"
+        }
+      ]
+    },
+    {
+      "id": "1",
+      "documentId": "q5iuulbw4wxzmi7d61oaagvp",
+      "featureName": "responseMessages",
+      "featureKey": "responseMessages",
+      "locale": "en",
+      "createdAt": "2026-07-27T13:42:29.415Z",
+      "updatedAt": "2026-07-27T13:42:29.415Z",
+      "adminStatus": "Published",
+      "KeyValuePairComponent": []
+    }
+  ]
+}

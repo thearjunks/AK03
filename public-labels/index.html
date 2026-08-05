@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AK stc labels</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-lockup">
+          <div class="stc-logo">stc<span>Kuwait</span></div>
+          <button class="collapse-button" type="button" aria-label="Collapse sidebar">‹</button>
+        </div>
+        <nav class="side-nav" aria-label="AK stc labels navigation">
+          <a href="/dashboard" data-nav-target="dashboard">Dashboard</a>
+          <a href="/labels" data-nav-target="labels">Labels</a>
+          <a href="/dictionary-generator" data-nav-target="compare">Dictionary Generator</a>
+          <a href="/snapshots" data-nav-target="snapshots">Snapshots</a>
+          <a href="/language-issues" data-nav-target="language">Language Issues</a>
+          <a href="/reports" data-nav-target="reports">Reports</a>
+          <a href="/settings" data-nav-target="settings">Settings</a>
+          <a href="/content-history" data-nav-target="audit">Content History</a>
+          <a href="/api-status" data-nav-target="api">API Status</a>
+        </nav>
+        <div class="user-card">
+          <div class="avatar">AK</div>
+          <div><strong>Admin User</strong><span>Super Admin</span></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1>AK stc labels</h1>
+            <p>Centralized label management &amp; change tracking from Strapi</p>
+          </div>
+          <div class="top-actions">
+            <span id="lastFetch" class="last-fetch">Last fetch: -</span>
+            <button id="fetchButton" class="primary-button" type="button">Fetch All Labels</button>
+            <button id="downloadExcel" class="ghost-button" type="button">Export</button>
+            <button id="refreshButton" class="ghost-button" type="button">Refresh</button>
+          </div>
+        </header>
+
+        <section id="dashboard" class="page active-page">
+          <div class="stats-grid">
+            <article class="metric total"><span>Total Active Labels</span><strong id="statTotal">0</strong><small id="statFeatureKeys">Across 0 Feature Entries</small></article>
+            <article class="metric existing"><span>Existing</span><strong id="statExisting">0</strong><small id="statExistingPct">0% of total</small></article>
+            <article class="metric new"><span>New</span><strong id="statNew">0</strong><small id="statNewPct">0% of total</small></article>
+            <article class="metric modified"><span>Modified</span><strong id="statModified">0</strong><small id="statModifiedPct">0% of total</small></article>
+            <article class="metric removed"><span>Removed</span><strong id="statRemoved">0</strong><small id="statRemovedPct">0% of total</small></article>
+            <article class="metric issues"><span>Language Issues</span><strong id="statIssues">0</strong><small id="statIssuesPct">0% of total</small></article>
+          </div>
+
+          <div class="content-grid">
+            <section class="workspace">
+              <div class="filters-card">
+                <div class="labels-only-title">
+                  <h2>All Labels</h2>
+                  <p>Search all labels by Label ID, Feature Key, Label Key, English Text, or Arabic Text.</p>
+                </div>
+                <label class="labels-search-field">Search (Global)<input id="globalSearch" type="search" placeholder="Search across all fields..." /></label>
+                <label class="labels-search-field">Feature Key<input id="featureKeySearch" type="search" placeholder="Search Feature Key..." /></label>
+                <label class="labels-search-field">English Text<input id="englishTextSearch" type="search" placeholder="Search English Text..." /></label>
+                <label class="labels-search-field">Arabic Text<input id="arabicTextSearch" type="search" placeholder="Search Arabic Text..." /></label>
+                <label>Feature Key<select id="featureFilter"><option value="all">All</option></select></label>
+                <label>Status<select id="statusFilter"><option value="all">All</option></select></label>
+                <label>Change<select id="changeFilter"><option value="all">All</option></select></label>
+                <label class="labels-search-field">Language Issue
+                  <select id="languageIssueFilter">
+                    <option value="all">All Language Checks</option>
+                    <option value="any">Any Language Issue</option>
+                    <option value="englishHasArabic">English Text has Arabic</option>
+                    <option value="arabicHasEnglish">Arabic Text has English</option>
+                    <option value="arabicFullEnglish">Arabic Text has full English</option>
+                    <option value="englishMissing">English Label Missing</option>
+                    <option value="arabicMissing">Arabic Label Missing</option>
+                  </select>
+                </label>
+                <button id="advancedToggle" class="advanced-button" type="button">Advanced Search</button>
+                <div id="activeFilterPill" class="active-pill" hidden></div>
+                <div id="advancedPanel" class="advanced-panel" hidden>
+                  <input data-advanced="labelId" placeholder="Label ID" />
+                  <input data-advanced="featureKey" placeholder="Feature Key" />
+                  <input data-advanced="labelKey" placeholder="Label Key" />
+                  <input data-advanced="englishText" placeholder="English Text" />
+                  <input data-advanced="arabicText" placeholder="Arabic Text" />
+                  <input data-advanced="languageIssueText" placeholder="Language Issue" />
+                  <input data-advanced="status" placeholder="Status" />
+                  <input data-advanced="firstSeenAt" placeholder="First Seen" />
+                  <input data-advanced="changeType" placeholder="Change" />
+                  <button id="clearAdvanced" class="ghost-button" type="button">Clear Advanced</button>
+                </div>
+              </div>
+
+              <section class="table-card" id="labels">
+                <div class="table-toolbar">
+                  <span id="tableInfo">Showing 0 labels</span>
+                  <div>
+                    <label>Show <select id="pageSize"><option>25</option><option>50</option><option>100</option></select> per page</label>
+                    <button id="prevPage" type="button">‹</button>
+                    <span id="pageNumber">1</span>
+                    <button id="nextPage" type="button">›</button>
+                  </div>
+                </div>
+                <div class="table-wrap">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Label ID</th>
+                        <th>Feature Key</th>
+                        <th>Label Key</th>
+                        <th>English Text</th>
+                        <th>Arabic Text</th>
+                        <th>Language Issue</th>
+                        <th>Status</th>
+                        <th>First Seen</th>
+                        <th>Change</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="labelsBody"><tr><td colspan="10" class="empty-row">Loading labels...</td></tr></tbody>
+                  </table>
+                </div>
+              </section>
+            </section>
+          </div>
+        </section>
+
+        <section id="compare" class="page dictionary-page">
+          <div class="dictionary-page-head">
+            <div>
+              <h2>Dictionary Generator</h2>
+              <p>Standardize English labels and add Arabic translations using the latest All Labels Dictionary.</p>
+            </div>
+            <span id="dictionarySource">Dictionary source: -</span>
+          </div>
+
+          <section class="dictionary-upload-panel" aria-labelledby="dictionaryUploadTitle">
+            <div class="dictionary-section-head">
+              <div>
+                <h3 id="dictionaryUploadTitle">Upload Workbook</h3>
+                <p>Excel workbooks are processed sheet by sheet without changing original row order.</p>
+              </div>
+              <input id="dictionaryFileInput" type="file" accept=".xlsx,.xlsm" hidden />
+              <button id="dictionaryBrowseButton" class="primary-button" type="button">Browse File</button>
+            </div>
+            <button id="dictionaryDropZone" class="dictionary-drop-zone" type="button">
+              <strong>Drop an Excel workbook here</strong>
+              <span>or select Browse File · .xlsx and .xlsm · maximum 50 MB</span>
+            </button>
+            <div id="dictionaryFileMeta" class="dictionary-file-meta" hidden></div>
+            <div id="dictionaryProgress" class="dictionary-progress" hidden>
+              <div><span id="dictionaryProgressLabel">Processing workbook...</span><strong id="dictionaryProgressValue">0%</strong></div>
+              <progress id="dictionaryProgressBar" max="100" value="0"></progress>
+            </div>
+          </section>
+
+          <section id="dictionaryResults" hidden>
+            <div id="dictionarySummary" class="dictionary-summary"></div>
+
+            <div class="dictionary-results-head">
+              <div>
+                <h3>Results Preview</h3>
+                <p id="dictionaryTableInfo">Showing 0 labels</p>
+              </div>
+              <div id="dictionaryFilters" class="dictionary-filters" aria-label="Dictionary result filters">
+                <button class="active" data-dictionary-filter="all" type="button">All</button>
+                <button data-dictionary-filter="matched" type="button">Matched</button>
+                <button data-dictionary-filter="not-found" type="button">Not Found</button>
+                <button data-dictionary-filter="translation-required" type="button">Translation Required</button>
+                <button data-dictionary-filter="needs-review" type="button">Needs Review</button>
+                <button data-dictionary-filter="updated" type="button">Updated</button>
+              </div>
+            </div>
+
+            <section class="table-card dictionary-table-card">
+              <div class="table-toolbar">
+                <span id="dictionaryPageInfo">Showing 0 labels</span>
+                <div>
+                  <label>Show <select id="dictionaryPageSize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select> per page</label>
+                  <button id="dictionaryPrevPage" type="button" aria-label="Previous dictionary page">‹</button>
+                  <span id="dictionaryPageNumber">1</span>
+                  <button id="dictionaryNextPage" type="button" aria-label="Next dictionary page">›</button>
+                </div>
+              </div>
+              <div class="table-wrap">
+                <table class="dictionary-table">
+                  <thead>
+                    <tr>
+                      <th>Row Number</th>
+                      <th>Original English Label</th>
+                      <th>Suggested English Text</th>
+                      <th>Arabic Translation</th>
+                      <th>Match Status</th>
+                      <th>Match Method</th>
+                      <th>Dictionary Match</th>
+                      <th>Review Status</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dictionaryBody"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="dictionary-downloads">
+              <div>
+                <h3>Downloads</h3>
+                <p>Download the completed workbook, unmatched labels, or processing summary.</p>
+              </div>
+              <div>
+                <button id="dictionaryDownloadUpdated" class="primary-button" type="button">Download Updated Excel</button>
+                <button id="dictionaryDownloadExceptions" class="ghost-button" type="button">Download Exception Report</button>
+                <button id="dictionaryDownloadSummary" class="ghost-button" type="button">Export Summary Report</button>
+              </div>
+            </section>
+          </section>
+        </section>
+        <section id="snapshots" class="page simple-page"><h2>Snapshots</h2><div id="snapshotContent" class="simple-card"></div></section>
+        <section id="language" class="page language-page">
+          <div class="language-page-head">
+            <div>
+              <h2>Language Issues</h2>
+              <p>Review casing, translation mapping, missing content, and mixed-language fields across current labels.</p>
+            </div>
+            <span id="languageFreshness">Source: -</span>
+          </div>
+
+          <div class="language-controls">
+            <label>Search Issues<input id="languageSearch" type="search" placeholder="Search text, Feature Key, Label Key..." /></label>
+            <label>Issue Type<select id="languageIssueTypeFilter"><option value="all">All Issue Types</option></select></label>
+            <label>Feature Key<select id="languageFeatureFilter"><option value="all">All Feature Keys</option></select></label>
+            <label>Status<select id="languageStatusFilter"><option value="all">All Statuses</option></select></label>
+          </div>
+
+          <div id="languageSummary" class="language-summary"></div>
+
+          <section class="table-card language-table-card">
+            <div class="table-toolbar">
+              <span id="languageTableInfo">Showing 0 issues</span>
+              <div>
+                <label>Show <select id="languagePageSize"><option>25</option><option selected>50</option><option>100</option><option>200</option></select> per page</label>
+                <button id="languagePrevPage" type="button" aria-label="Previous language issues page">‹</button>
+                <span id="languagePageNumber">1</span>
+                <button id="languageNextPage" type="button" aria-label="Next language issues page">›</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="language-table">
+                <thead>
+                  <tr>
+                    <th>Issue Type</th>
+                    <th>English Text</th>
+                    <th>Arabic Text</th>
+                    <th>Occurrences</th>
+                    <th>Feature Key</th>
+                    <th>Label Key</th>
+                    <th>Module / Screen</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="languageBody"><tr><td colspan="9" class="empty-row">Open Language Issues to load the analysis.</td></tr></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+        <section id="reports" class="page simple-page"><h2>Reports</h2><div class="simple-card"><button id="downloadExcel2" class="primary-button" type="button">Download Filtered Excel</button></div></section>
+        <section id="settings" class="page simple-page"><h2>Settings</h2><div class="simple-card">Local labels dashboard on port 4555.</div></section>
+        <section id="audit" class="page simple-page">
+          <h2>Content History</h2>
+          <div class="history-controls simple-card">
+            <label>Search History<input id="historySearch" type="search" placeholder="Search feature, label, updater, status..." /></label>
+            <label>Feature Key<select id="historyFeatureFilter"><option value="all">All</option></select></label>
+            <label>Change Type
+              <select id="historyChangeFilter">
+                <option value="all">All</option>
+                <option value="Created">Created</option>
+                <option value="Modified">Modified</option>
+                <option value="Removed">Removed</option>
+              </select>
+            </label>
+          </div>
+          <div id="auditContent" class="simple-card"></div>
+        </section>
+        <section id="api" class="page simple-page"><h2>API Status</h2><div id="apiContent" class="simple-card"></div></section>
+      </main>
+    </div>
+
+    <div id="drawerBackdrop" class="drawer-backdrop" hidden>
+      <aside class="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+        <header>
+          <div><h2 id="drawerTitle">Label Details</h2><p id="drawerSubtitle"></p></div>
+          <button id="closeDrawer" type="button" aria-label="Close">×</button>
+        </header>
+        <div id="drawerContent" class="drawer-content"></div>
+      </aside>
+    </div>
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

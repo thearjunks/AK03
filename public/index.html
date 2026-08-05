@@ -1,0 +1,303 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>STC Device Asset Dashboard</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">stc</div>
+          <div>
+            <h1>Device Assets</h1>
+            <p>CMS monitoring dashboard</p>
+          </div>
+        </div>
+
+        <nav class="side-nav" aria-label="Dashboard navigation">
+          <button class="active" data-section="overview" type="button">Overview</button>
+          <button data-section="assets" type="button">Devices</button>
+          <button data-section="labs" type="button">Labs</button>
+          <button data-section="changes" type="button">Changes</button>
+          <button data-section="exports" type="button">Exports</button>
+        </nav>
+
+        <section class="panel">
+          <div class="panel-head">
+            <span>Snapshot History</span>
+            <button id="refreshStatus" class="icon-button" title="Refresh status" type="button">↻</button>
+          </div>
+          <div id="snapshotList" class="snapshot-list empty">No snapshots yet</div>
+        </section>
+
+        <section class="auth-panel" aria-label="Strapi admin access">
+          <div>
+            <strong>Strapi Admin Access</strong>
+            <span id="adminModeStatus">Public API mode</span>
+          </div>
+          <form id="adminLoginForm" autocomplete="on">
+            <input id="adminEmail" name="email" type="email" placeholder="Add your Strapi email" autocomplete="username" />
+            <input id="adminPassword" name="password" type="password" placeholder="Add your Strapi password" autocomplete="current-password" />
+            <button id="adminLoginButton" class="primary-button" type="submit">Connect Admin</button>
+          </form>
+          <button id="adminLogoutButton" class="secondary-button" type="button">Use Public API</button>
+          <small>Credentials are used only by this local dashboard session and are not saved.</small>
+        </section>
+
+        <div class="sidebar-footer">
+          <strong>Source</strong>
+          <span id="sourceNote">Public Strapi device API</span>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h2>STC Device Asset Dashboard</h2>
+            <p id="lastFetch">Refresh CMS data to load the device registry.</p>
+          </div>
+          <div class="actions">
+            <button id="fetchButton" class="primary-button" type="button">Refresh CMS Data</button>
+            <button id="exportXlsx" class="secondary-button" type="button">Excel</button>
+            <button id="exportCsv" class="secondary-button" type="button">CSV</button>
+            <button id="exportPdf" class="secondary-button" type="button">PDF</button>
+          </div>
+        </header>
+
+        <section id="overview" class="section active-section">
+          <div class="stats-grid">
+            <article class="stat total"><span>Total Devices</span><strong id="statTotal">0</strong></article>
+            <article class="stat new"><span>New</span><strong id="statNew">0</strong></article>
+            <article class="stat modified"><span>Modified</span><strong id="statModified">0</strong></article>
+            <article class="stat removed"><span>Removed</span><strong id="statRemoved">0</strong></article>
+            <article class="stat published"><span>Published</span><strong id="statPublished">0</strong></article>
+            <article class="stat draft"><span>Draft</span><strong id="statDraft">0</strong></article>
+            <article class="stat warning"><span>Missing Arabic</span><strong id="statMissingArabic">0</strong></article>
+            <article class="stat warning"><span>Missing Images</span><strong id="statMissingImages">0</strong></article>
+            <article class="stat warning"><span>Missing Mandatory</span><strong id="statMissingMandatory">0</strong></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="card chart-card">
+              <div class="card-head">
+                <h3>Status Mix</h3>
+                <p>Publishing and change health</p>
+              </div>
+              <div id="statusChart" class="bar-chart"></div>
+            </section>
+            <section class="card">
+              <div class="card-head">
+                <h3>Recent Changes</h3>
+                <p>Latest modified devices</p>
+              </div>
+              <div id="recentChanges" class="mini-list"></div>
+            </section>
+            <section class="card">
+              <div class="card-head">
+                <h3>Latest Created</h3>
+                <p>Newest CMS entries</p>
+              </div>
+              <div id="latestCreated" class="mini-list"></div>
+            </section>
+            <section class="card">
+              <div class="card-head">
+                <h3>Removed Log</h3>
+                <p>Devices missing from current source</p>
+              </div>
+              <div id="removedLog" class="mini-list"></div>
+            </section>
+          </div>
+        </section>
+
+        <section id="assets" class="section">
+          <div class="table-panel">
+            <div class="table-head">
+              <div>
+                <h3>Device Registry</h3>
+                <p>Search, filter, sort, inspect English/Arabic content, and export all fields.</p>
+              </div>
+              <div class="inline-actions">
+                <a class="secondary-link" href="https://content.stc.com.kw/admin/content-manager/collection-types/api::stc-device-group.stc-device-group?plugins%5Bi18n%5D%5Blocale%5D=en" target="_blank" rel="noreferrer">Open Devices EN</a>
+                <a class="secondary-link" href="https://content.stc.com.kw/admin/content-manager/collection-types/api::stc-device-group.stc-device-group?plugins%5Bi18n%5D%5Blocale%5D=ar" target="_blank" rel="noreferrer">Open Devices AR</a>
+              </div>
+            </div>
+
+            <div class="toolbar">
+              <input id="searchInput" type="search" placeholder="Global search across device fields" />
+              <select id="brandFilter"><option value="all">All brands</option></select>
+              <select id="categoryFilter"><option value="all">All categories</option></select>
+              <select id="groupFilter"><option value="all">All device groups</option></select>
+              <select id="publishFilter"><option value="all">All publishing states</option></select>
+              <select id="changeFilter">
+                <option value="all">All change states</option>
+                <option value="New">New</option>
+                <option value="Modified">Modified</option>
+                <option value="Removed">Removed</option>
+                <option value="Unchanged">Unchanged</option>
+              </select>
+              <select id="sortSelect">
+                <option value="updatedAt:desc">Last modified newest</option>
+                <option value="updatedAt:asc">Last modified oldest</option>
+                <option value="createdAt:desc">Created newest</option>
+                <option value="assetName:asc">Asset A-Z</option>
+                <option value="brandName:asc">Brand A-Z</option>
+              </select>
+            </div>
+
+            <div class="date-filters">
+              <label>Created from <input id="createdFrom" type="date" /></label>
+              <label>Created to <input id="createdTo" type="date" /></label>
+              <label>Modified from <input id="modifiedFrom" type="date" /></label>
+              <label>Modified to <input id="modifiedTo" type="date" /></label>
+              <button id="clearFilters" class="secondary-button" type="button">Clear Filters</button>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Asset</th>
+                    <th>Device</th>
+                    <th>Brand</th>
+                    <th>Category</th>
+                    <th>Group</th>
+                    <th>Publish</th>
+                    <th>Change</th>
+                    <th>Arabic</th>
+                    <th>Images</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="devicesBody">
+                  <tr><td colspan="11" class="empty-row">No devices loaded yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span id="pageInfo">0 devices</span>
+              <button id="prevPage" type="button">Previous</button>
+              <button id="nextPage" type="button">Next</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="labs" class="section">
+          <div class="table-panel">
+            <div class="table-head">
+              <div>
+                <h3>Labs Registry</h3>
+                <p>Fetch a second Strapi collection with English and Arabic content side by side.</p>
+              </div>
+              <div class="inline-actions">
+                <a id="openLabsEn" class="secondary-link" href="#" target="_blank" rel="noreferrer">Open Labs EN</a>
+                <a id="openLabsAr" class="secondary-link" href="#" target="_blank" rel="noreferrer">Open Labs AR</a>
+              </div>
+            </div>
+
+            <div class="toolbar labs-toolbar">
+              <input id="labsCollectionUid" type="text" placeholder="Labs collection UID, e.g. api::stc-label.stc-label" />
+              <input id="labsSearchInput" type="search" placeholder="Search labs fields" />
+              <select id="labsPublishFilter"><option value="all">All publishing states</option></select>
+              <select id="labsChangeFilter">
+                <option value="all">All change states</option>
+                <option value="New">New</option>
+                <option value="Modified">Modified</option>
+                <option value="Removed">Removed</option>
+                <option value="Unchanged">Unchanged</option>
+              </select>
+              <button id="fetchLabsButton" class="primary-button" type="button">Refresh Labs</button>
+            </div>
+
+            <div class="stats-grid compact-stats">
+              <article class="stat total"><span>Total Labs</span><strong id="labsStatTotal">0</strong></article>
+              <article class="stat new"><span>New</span><strong id="labsStatNew">0</strong></article>
+              <article class="stat modified"><span>Modified</span><strong id="labsStatModified">0</strong></article>
+              <article class="stat removed"><span>Removed</span><strong id="labsStatRemoved">0</strong></article>
+              <article class="stat published"><span>Published</span><strong id="labsStatPublished">0</strong></article>
+              <article class="stat draft"><span>Draft</span><strong id="labsStatDraft">0</strong></article>
+              <article class="stat warning"><span>Missing Arabic</span><strong id="labsStatMissingArabic">0</strong></article>
+              <article class="stat warning"><span>Missing Images</span><strong id="labsStatMissingImages">0</strong></article>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th>Collection</th>
+                    <th>Publish</th>
+                    <th>Change</th>
+                    <th>Arabic</th>
+                    <th>Images</th>
+                    <th>Fields</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="labsBody">
+                  <tr><td colspan="9" class="empty-row">Connect Strapi admin, then refresh Labs.</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="pagination">
+              <span id="labsPageInfo">0 labs</span>
+              <button id="labsPrevPage" type="button">Previous</button>
+              <button id="labsNextPage" type="button">Next</button>
+            </div>
+          </div>
+        </section>
+
+        <section id="changes" class="section">
+          <div class="compare-grid">
+            <section class="card">
+              <div class="card-head">
+                <h3>Device Comparison</h3>
+                <p>Select a modified or removed device to inspect field-level changes.</p>
+              </div>
+              <div id="compareList" class="mini-list"></div>
+            </section>
+            <section class="card">
+              <div class="card-head">
+                <h3>Field Changes</h3>
+                <p>Added, modified, and removed values</p>
+              </div>
+              <div id="compareDetails" class="diff-list empty">No device selected.</div>
+            </section>
+          </div>
+        </section>
+
+        <section id="exports" class="section">
+          <div class="card exports-card">
+            <h3>Exports</h3>
+            <p>Exports respect the current filters and include all raw English and Arabic device JSON.</p>
+            <div class="export-actions">
+              <button id="exportXlsx2" class="primary-button" type="button">Download Excel</button>
+              <button id="exportCsv2" class="secondary-button" type="button">Download CSV</button>
+              <button id="exportPdf2" class="secondary-button" type="button">Download PDF</button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="deviceDrawer" class="drawer-backdrop" hidden>
+      <aside class="device-drawer" role="dialog" aria-modal="true" aria-labelledby="drawerTitle">
+        <header class="drawer-header">
+          <div>
+            <h2 id="drawerTitle">Device Details</h2>
+            <p id="drawerSubtitle"></p>
+          </div>
+          <button id="closeDrawer" class="drawer-close" type="button" aria-label="Close">×</button>
+        </header>
+        <div id="drawerContent" class="drawer-content"></div>
+      </aside>
+    </div>
+
+    <div id="toast" class="toast" hidden></div>
+    <script src="/app.js"></script>
+  </body>
+</html>

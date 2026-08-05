@@ -1,0 +1,14 @@
+node_modules/
+outputs/
+.codex-spreadsheet-runtime/
+*.log
+
+.env
+.env.*
+!.env.example
+
+data/*.backup-*.json
+
+.DS_Store
+Thumbs.db
+
