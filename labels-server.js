@@ -42,6 +42,15 @@ const STRAPI_USERS = [
   ["Suresh Dandu", "", "suresh.dandu.c@stc.com.kw"],
   ["Tushar Singhal", "tushar.singhal", "tushar.singhal.c@stc.com.kw"],
 ].map(([fullName, username, email]) => ({ fullName, username, email }));
+const APPROVED_MODIFIER_NAMES = new Set([
+  "Abhilash Krishna",
+  "Arjun Sajimon",
+  "Mohamed Ramzan",
+  "Mohammed Mohsin",
+  "Pradeep Prasanga",
+  "Priya Thangarasa",
+  "Suresh Dandu",
+].map((value) => value.toLowerCase()));
 
 const app = express();
 app.use(express.json({ limit: "10mb" }));
@@ -166,6 +175,11 @@ function knownUser(value) {
   )) ?? null;
 }
 
+function isApprovedModifier(value) {
+  const user = knownUser(value);
+  return Boolean(user && APPROVED_MODIFIER_NAMES.has(user.fullName.toLowerCase()));
+}
+
 async function loginAdmin(email, password) {
   const json = await postJson(STRAPI_ADMIN_LOGIN, { email, password });
   const token = extractAdminJwt(json);
@@ -197,7 +211,7 @@ async function readState() {
   const storedHistory = state.changeHistory?.length ? state.changeHistory : historyFromSnapshots(state.snapshots ?? []);
   const cutoff = Date.now() - (HISTORY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
   const changeHistory = storedHistory.filter((record) => new Date(record.changedAt).getTime() >= cutoff);
-  return {
+  const normalized = {
     initializedAt: state.initializedAt ?? null,
     labels: reconcileRemovedLabels(state.labels ?? {}),
     snapshots: state.snapshots ?? [],
@@ -205,6 +219,8 @@ async function readState() {
     changeHistory,
     historySync: state.historySync ?? null,
   };
+  applyLifecycleClassifications(normalized);
+  return normalized;
 }
 
 async function readAdminSupplement() {
@@ -313,6 +329,38 @@ function changeDetails(previous, current) {
   ]
     .filter(([field]) => text(previous[field]) !== text(current[field]))
     .map(([field, label]) => ({ field, label, before: previous[field] ?? "", after: current[field] ?? "" }));
+}
+
+function hasTextChange(details = []) {
+  return details.some((item) => item.field === "englishText" || item.field === "arabicText");
+}
+
+function applyLifecycleClassifications(state) {
+  const rowsById = new Map(rowsFromState(state, true).map((row) => [row.labelId, row]));
+  const strapiEvents = (state.changeHistory ?? [])
+    .filter((record) => record.source === "Strapi Content History" && rowsById.has(record.labelId))
+    .sort((a, b) => text(a.changedAt).localeCompare(text(b.changedAt)));
+
+  for (const event of strapiEvents) {
+    const row = rowsById.get(event.labelId);
+    if (!row || row.changeType === "Removed") continue;
+    if (event.changeType === "Created") {
+      row.lifecycleCreatedAt ||= event.changedAt;
+      row.lifecycleCreatedBy ||= event.changedBy;
+    }
+    if (event.changeType === "Modified" && hasTextChange(event.changeDetails) && isApprovedModifier(event.changedBy)) {
+      row.lifecycleModifiedAt = event.changedAt;
+      row.lifecycleModifiedBy = event.changedBy;
+      row.changeType = "Modified";
+      row.lastModifiedAt = event.changedAt || row.lastModifiedAt;
+    }
+  }
+
+  for (const row of rowsById.values()) {
+    if (row.changeType === "Removed") continue;
+    if (row.lifecycleModifiedAt) row.changeType = "Modified";
+    else if (row.lifecycleCreatedAt) row.changeType = "New";
+  }
 }
 
 function changedBy(row) {
@@ -558,6 +606,7 @@ async function syncStrapiContentHistory(state, token) {
   state.changeHistory = [...unique.values(), ...snapshotRecords]
     .sort((a, b) => text(b.changedAt).localeCompare(text(a.changedAt)))
     .slice(0, 50000);
+  applyLifecycleClassifications(state);
   state.historySync = {
     syncedAt: nowIso(),
     retentionDays: HISTORY_RETENTION_DAYS,
@@ -639,9 +688,10 @@ function compareAndSaveLabels(state, currentRows, sourceInfo = {}) {
       ?? firstUnseen(previousByFeatureLabel, featureLabelKey(raw));
     const labelId = old?.labelId ?? `LBL-${hash(stableLabelKey(raw) || fallbackLabelKey(raw), 12)}`;
     const details = changeDetails(old, raw);
-    let changeType = "Existing";
+    const approvedTextChange = hasTextChange(details) && isApprovedModifier(userDisplayName(raw.updatedBy));
+    let changeType = old?.changeType === "New" || old?.changeType === "Modified" ? old.changeType : "Existing";
     if (!old || old.changeType === "Removed") changeType = "New";
-    else if (rowChanged(old, raw)) changeType = "Modified";
+    else if (approvedTextChange) changeType = "Modified";
 
     const row = {
       ...old,
@@ -658,8 +708,8 @@ function compareAndSaveLabels(state, currentRows, sourceInfo = {}) {
     row.signature = labelSignature(row);
     nextLabels[labelId] = row;
     if (old?.labelId) seenPreviousIds.add(old.labelId);
-    if (changeType === "New") changes.new.push(compact(row));
-    if (changeType === "Modified") changes.modified.push(compact(row));
+    if (changeType === "New" && (!old || old.changeType === "Removed")) changes.new.push(compact(row));
+    if (changeType === "Modified" && old?.changeType !== "Modified") changes.modified.push(compact(row));
   }
 
   const currentFeatureLabels = new Set(currentRows.map(featureLabelKey));
