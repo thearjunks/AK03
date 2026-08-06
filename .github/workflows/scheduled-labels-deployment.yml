@@ -2,8 +2,8 @@ name: Scheduled labels fetch and deployment
 
 on:
   schedule:
-    # Kuwait is UTC+3. Run Sunday-Thursday at 10:00 and 15:00 Kuwait time.
-    - cron: "0 7,12 * * 0-4"
+    # Kuwait is UTC+3 with no daylight-saving time: 07:00 UTC = 10:00 Kuwait time.
+    - cron: "0 7 * * 0-4"
   workflow_dispatch:
 
 concurrency:
@@ -24,6 +24,9 @@ jobs:
       DASHBOARD_USERNAME: AK
       DASHBOARD_PASSWORD: ${{ secrets.DASHBOARD_PASSWORD }}
       NODE_OPTIONS: --use-system-ca
+      AUTOMATION_LOG: automation.log
+      KUWAIT_HOLIDAY_CALENDAR_URL: https://www.officeholidays.com/ics/kuwait
+      KUWAIT_HOLIDAY_DATES: ${{ vars.KUWAIT_HOLIDAY_DATES }}
 
     steps:
       - name: Check out main
@@ -41,31 +44,58 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check email configuration
-        if: env.SMTP_PASSWORD == ''
-        run: echo "::warning::Email notifications require the SMTP_PASSWORD repository secret."
-
-      - name: Check dashboard login configuration
-        if: env.DASHBOARD_PASSWORD == ''
+      - name: Validate automation configuration
+        id: config
+        continue-on-error: true
         run: |
-          echo "::error::Dashboard automation requires the DASHBOARD_PASSWORD repository secret."
-          exit 1
+          : > "$AUTOMATION_LOG"
+          if [ -z "$SMTP_PASSWORD" ]; then
+            echo "SMTP_PASSWORD repository secret is required." | tee -a "$AUTOMATION_LOG"
+            exit 1
+          fi
+          if [ -z "$DASHBOARD_PASSWORD" ]; then
+            echo "DASHBOARD_PASSWORD repository secret is required." | tee -a "$AUTOMATION_LOG"
+            exit 1
+          fi
+          echo "$(TZ=Asia/Kuwait date --iso-8601=seconds) Configuration validated" >> "$AUTOMATION_LOG"
+
+      - name: Check Kuwait business day
+        id: gate
+        if: steps.config.outcome == 'success'
+        continue-on-error: true
+        run: node scripts/check-kuwait-business-day.mjs
 
       - name: Start labels service
+        id: service
+        if: steps.gate.outputs.decision == 'run'
+        continue-on-error: true
         run: |
           PORT=4555 node labels-server.js > labels-server.log 2>&1 &
           echo $! > labels-server.pid
           for attempt in {1..30}; do
             if curl --fail --silent http://127.0.0.1:4555/api/dashboard-session > /dev/null; then
+              echo "$(TZ=Asia/Kuwait date --iso-8601=seconds) Labels service started" >> "$AUTOMATION_LOG"
               exit 0
             fi
             sleep 2
           done
           cat labels-server.log
+          echo "$(TZ=Asia/Kuwait date --iso-8601=seconds) Labels service failed to start" >> "$AUTOMATION_LOG"
           exit 1
 
-      - name: Fetch latest Strapi labels
+      - name: Email Data Fetch Started
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: Data Fetch Started
+          EMAIL_STATUS: ${{ steps.gate.outputs.decision == 'skip' && 'Skipped' || steps.service.outcome == 'success' && 'Started' || steps.service.outcome == 'failure' && 'Failed' || 'Skipped' }}
+          EMAIL_DETAILS: ${{ steps.gate.outputs.decision == 'skip' && steps.gate.outputs.reason || steps.service.outcome == 'success' && format('Fetching the latest Strapi labels for the {0} scheduled deployment.', steps.gate.outputs.date) || steps.service.outcome == 'failure' && 'The local labels service failed to start. Data fetch could not begin.' || 'Data fetch was blocked by a failed pre-flight check.' }}
+          EMAIL_ATTACHMENTS: labels-server.log,automation.log,kuwait-holidays.ics
+        run: node scripts/send-automation-email.mjs
+
+      - name: Fetch and validate latest Strapi labels
         id: fetch
+        if: steps.service.outcome == 'success'
         continue-on-error: true
         run: |
           login_payload=$(node -e 'process.stdout.write(JSON.stringify({ username: process.env.DASHBOARD_USERNAME, password: process.env.DASHBOARD_PASSWORD }))')
@@ -82,68 +112,161 @@ jobs:
             --cookie dashboard-cookie.txt --request POST http://127.0.0.1:4555/api/fetch)
           curl_exit=$?
           set -e
-
           if [ "$curl_exit" -ne 0 ] || [ "$http_code" -lt 200 ] || [ "$http_code" -ge 300 ]; then
             echo "error=Strapi fetch failed with curl exit $curl_exit and HTTP $http_code." >> "$GITHUB_OUTPUT"
-            cat fetch-response.json 2>/dev/null || true
             exit 1
           fi
 
           node --input-type=module <<'NODE'
           import fs from "node:fs";
-          const response = JSON.parse(fs.readFileSync("fetch-response.json", "utf8"));
-          if (!response.snapshot?.fetchedAt || !response.totals) {
-            throw new Error("The fetch response did not contain a valid snapshot and totals.");
+          try {
+            const response = JSON.parse(fs.readFileSync("fetch-response.json", "utf8"));
+            const totals = response.totals || {};
+            if (!response.snapshot?.fetchedAt || !Number.isInteger(totals.total) || totals.total <= 0) {
+              throw new Error("The fetch response did not contain a valid non-empty snapshot.");
+            }
+            if (Number(response.sourceTotals?.labels) !== totals.total) {
+              throw new Error(`Fetched label count ${response.sourceTotals?.labels} does not match active total ${totals.total}.`);
+            }
+            if (Number(totals.existing) + Number(totals.new) + Number(totals.modified) !== totals.total) {
+              throw new Error("Existing, new, and modified counts do not add up to the active total.");
+            }
+            if (!Number.isInteger(totals.featureEntries) || totals.featureEntries <= 0) {
+              throw new Error("The fetch did not return any Strapi feature entries.");
+            }
+            const age = Date.now() - new Date(response.snapshot.fetchedAt).getTime();
+            if (!Number.isFinite(age) || age < 0 || age > 30 * 60 * 1000) {
+              throw new Error("The fetched snapshot timestamp is not current.");
+            }
+            for (const [key, value] of Object.entries({
+              fetched_at: response.snapshot.fetchedAt,
+              active: totals.total,
+              new: totals.new,
+              modified: totals.modified,
+              removed: totals.removed,
+              feature_entries: totals.featureEntries,
+            })) fs.appendFileSync(process.env.GITHUB_OUTPUT, `${key}=${value}\n`);
+            fs.appendFileSync(process.env.AUTOMATION_LOG, `${new Date().toISOString()} Data fetch validated: ${totals.total} active labels\n`);
+          } catch (error) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `error=Data validation failed: ${error.message}\n`);
+            fs.appendFileSync(process.env.AUTOMATION_LOG, `${new Date().toISOString()} Data validation failed: ${error.message}\n`);
+            throw error;
           }
-          const output = process.env.GITHUB_OUTPUT;
-          fs.appendFileSync(output, `fetched_at=${response.snapshot.fetchedAt}\n`);
-          fs.appendFileSync(output, `active=${response.totals.total}\n`);
-          fs.appendFileSync(output, `new=${response.totals.new}\n`);
-          fs.appendFileSync(output, `modified=${response.totals.modified}\n`);
-          fs.appendFileSync(output, `removed=${response.totals.removed}\n`);
-          fs.appendFileSync(output, `feature_entries=${response.totals.featureEntries}\n`);
           NODE
 
-      - name: Email data fetch success
-        if: steps.fetch.outcome == 'success' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+      - name: Email Data Fetch Completed
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
         continue-on-error: true
         env:
-          EMAIL_EVENT: Data Fetch
-          EMAIL_STATUS: Success
+          EMAIL_EVENT: Data Fetch Completed
+          EMAIL_STATUS: ${{ steps.gate.outputs.decision == 'skip' && 'Skipped' || steps.fetch.outcome == 'success' && 'Success' || steps.fetch.outcome == 'failure' && 'Failed' || 'Skipped' }}
           EMAIL_DETAILS: >-
-            Fetch completed successfully. Active labels: ${{ steps.fetch.outputs.active }};
-            New: ${{ steps.fetch.outputs.new }}; Modified: ${{ steps.fetch.outputs.modified }};
-            Removed: ${{ steps.fetch.outputs.removed }}; Feature entries: ${{ steps.fetch.outputs.feature_entries }};
-            Snapshot: ${{ steps.fetch.outputs.fetched_at }}.
-          EMAIL_ATTACHMENTS: fetch-response.json
+            ${{ steps.gate.outputs.decision == 'skip' && steps.gate.outputs.reason
+              || steps.fetch.outcome == 'success'
+              && format('Fetch validated. Active: {0}; New: {1}; Modified: {2}; Removed: {3}; Feature entries: {4}; Snapshot: {5}.', steps.fetch.outputs.active, steps.fetch.outputs.new, steps.fetch.outputs.modified, steps.fetch.outputs.removed, steps.fetch.outputs.feature_entries, steps.fetch.outputs.fetched_at)
+              || steps.fetch.outcome == 'failure' && (steps.fetch.outputs.error || 'The latest Strapi data fetch or validation failed. See the attached logs.')
+              || 'Data fetch was skipped because an earlier pre-flight stage failed.' }}
+          EMAIL_ATTACHMENTS: fetch-response.json,labels-server.log,automation.log
         run: node scripts/send-automation-email.mjs
 
-      - name: Email data fetch failure
-        if: steps.fetch.outcome == 'failure' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+      - name: Validate dashboard update
+        id: dashboard
+        if: steps.fetch.outcome == 'success'
         continue-on-error: true
         env:
-          EMAIL_EVENT: Data Fetch
-          EMAIL_STATUS: Failure
-          EMAIL_DETAILS: ${{ steps.fetch.outputs.error || 'The Strapi fetch failed. See the attached response and service log.' }}
-          EMAIL_ATTACHMENTS: fetch-response.json,labels-server.log
+          EXPECTED_FETCHED_AT: ${{ steps.fetch.outputs.fetched_at }}
+          EXPECTED_ACTIVE: ${{ steps.fetch.outputs.active }}
+        run: |
+          status_code=$(curl --silent --show-error --output dashboard-status.json --write-out "%{http_code}" \
+            --cookie dashboard-cookie.txt http://127.0.0.1:4555/api/status)
+          route_code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
+            --cookie dashboard-cookie.txt http://127.0.0.1:4555/dashboard)
+          if [ "$status_code" != "200" ] || [ "$route_code" != "200" ]; then
+            echo "error=Local dashboard validation failed: status HTTP $status_code, route HTTP $route_code." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
+          node --input-type=module <<'NODE'
+          import fs from "node:fs";
+          try {
+            const status = JSON.parse(fs.readFileSync("dashboard-status.json", "utf8"));
+            const state = JSON.parse(fs.readFileSync("data/label-state.json", "utf8"));
+            if (status.lastSnapshot?.fetchedAt !== process.env.EXPECTED_FETCHED_AT || state.lastSnapshot?.fetchedAt !== process.env.EXPECTED_FETCHED_AT) {
+              throw new Error("The local dashboard and saved state are not serving the fetched snapshot.");
+            }
+            if (Number(status.totals?.total) !== Number(process.env.EXPECTED_ACTIVE)) {
+              throw new Error("The local dashboard active count does not match the validated fetch.");
+            }
+            fs.appendFileSync(process.env.AUTOMATION_LOG, `${new Date().toISOString()} Dashboard update validated\n`);
+          } catch (error) {
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `error=Dashboard validation failed: ${error.message}\n`);
+            fs.appendFileSync(process.env.AUTOMATION_LOG, `${new Date().toISOString()} Dashboard validation failed: ${error.message}\n`);
+            throw error;
+          }
+          NODE
+
+      - name: Email Dashboard Update Completed
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: Dashboard Update Completed
+          EMAIL_STATUS: ${{ steps.gate.outputs.decision == 'skip' && 'Skipped' || steps.dashboard.outcome == 'success' && 'Success' || steps.dashboard.outcome == 'failure' && 'Failed' || 'Skipped' }}
+          EMAIL_DETAILS: ${{ steps.gate.outputs.decision == 'skip' && steps.gate.outputs.reason || steps.dashboard.outcome == 'success' && format('The dashboard and saved state are serving snapshot {0} with {1} active labels.', steps.fetch.outputs.fetched_at, steps.fetch.outputs.active) || steps.dashboard.outcome == 'failure' && (steps.dashboard.outputs.error || 'Dashboard validation failed. The GitHub commit and Hostinger deployment were stopped.') || 'Dashboard update was skipped because an earlier stage failed.' }}
+          EMAIL_ATTACHMENTS: dashboard-status.json,labels-server.log,automation.log
         run: node scripts/send-automation-email.mjs
 
-      - name: Stop after fetch failure
-        if: steps.fetch.outcome == 'failure'
-        run: exit 1
+      - name: Email GitHub Commit Started
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: GitHub Commit Started
+          EMAIL_STATUS: ${{ steps.dashboard.outcome == 'success' && 'Started' || 'Skipped' }}
+          EMAIL_DETAILS: ${{ steps.dashboard.outcome == 'success' && format('Committing validated dashboard snapshot {0} to the main branch.', steps.fetch.outputs.fetched_at) || steps.gate.outputs.decision == 'skip' && steps.gate.outputs.reason || 'GitHub commit was skipped because an earlier stage failed.' }}
+        run: node scripts/send-automation-email.mjs
 
       - name: Commit and push fetched snapshot
-        id: publish
+        id: commit
+        if: steps.dashboard.outcome == 'success'
+        continue-on-error: true
         run: |
-          git config user.name "AK stc Labels Automation"
-          git config user.email "thearjunks@gmail.com"
-          git add data/label-state.json
-          git commit --allow-empty -m "Automated labels fetch ${{ steps.fetch.outputs.fetched_at }}"
-          git push origin HEAD:main
+          set +e
+          {
+            git config user.name "AK stc Labels Automation"
+            git config user.email "thearjunks@gmail.com"
+            git add data/label-state.json
+            git commit --allow-empty -m "Automated labels fetch ${{ steps.fetch.outputs.fetched_at }}"
+            git push origin HEAD:main
+          } 2>&1 | tee git-commit.log
+          git_status=${PIPESTATUS[0]}
+          set -e
+          if [ "$git_status" -ne 0 ]; then
+            echo "error=GitHub commit or push failed with exit $git_status." >> "$GITHUB_OUTPUT"
+            exit 1
+          fi
           echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "$(TZ=Asia/Kuwait date --iso-8601=seconds) GitHub commit pushed: $(git rev-parse HEAD)" >> "$AUTOMATION_LOG"
 
-      - name: Verify Hostinger deployment
+      - name: Email GitHub Commit Completed
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: GitHub Commit Completed
+          EMAIL_STATUS: ${{ steps.commit.outcome == 'success' && 'Success' || steps.commit.outcome == 'failure' && 'Failed' || 'Skipped' }}
+          EMAIL_DETAILS: ${{ steps.commit.outcome == 'success' && format('Validated snapshot committed and pushed to main as {0}.', steps.commit.outputs.commit) || steps.commit.outcome == 'failure' && (steps.commit.outputs.error || 'The GitHub commit failed. Hostinger deployment was not started.') || steps.gate.outputs.decision == 'skip' && steps.gate.outputs.reason || 'GitHub commit was skipped because an earlier stage failed.' }}
+          EMAIL_ATTACHMENTS: git-commit.log,automation.log
+        run: node scripts/send-automation-email.mjs
+
+      - name: Email Hostinger Deployment Started
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          EMAIL_EVENT: Hostinger Deployment Started
+          EMAIL_STATUS: ${{ steps.commit.outcome == 'success' && 'Started' || 'Skipped' }}
+          EMAIL_DETAILS: ${{ steps.commit.outcome == 'success' && format('Waiting for Hostinger to deploy commit {0} and serve snapshot {1}.', steps.commit.outputs.commit, steps.fetch.outputs.fetched_at) || steps.gate.outputs.decision == 'skip' && steps.gate.outputs.reason || 'Hostinger deployment was skipped because an earlier stage failed.' }}
+        run: node scripts/send-automation-email.mjs
+
+      - name: Verify Hostinger deployment and live dashboard
         id: deployment
+        if: steps.commit.outcome == 'success'
         continue-on-error: true
         env:
           EXPECTED_FETCHED_AT: ${{ steps.fetch.outputs.fetched_at }}
@@ -164,7 +287,7 @@ jobs:
             http_code=$(curl --silent --show-error --output production-status.json --write-out "%{http_code}" \
               --cookie production-cookie.txt \
               "https://labels.stcdigitalhub.com/api/status?automation=$GITHUB_RUN_ID-$attempt" || true)
-            echo "$timestamp attempt=$attempt http=$http_code" | tee -a deployment-check.log
+            echo "$timestamp attempt=$attempt status_http=$http_code" | tee -a deployment-check.log
 
             if [ "$http_code" = "200" ] && node --input-type=module <<'NODE'
           import fs from "node:fs";
@@ -174,46 +297,31 @@ jobs:
           process.exit(matches ? 0 : 1);
           NODE
             then
-              route_code=$(curl --silent --output /dev/null --write-out "%{http_code}" \
-                --cookie production-cookie.txt \
+              dashboard_code=$(curl --silent --output /dev/null --write-out "%{http_code}" --cookie production-cookie.txt \
+                "https://labels.stcdigitalhub.com/dashboard?automation=$GITHUB_RUN_ID")
+              labels_code=$(curl --silent --output /dev/null --write-out "%{http_code}" --cookie production-cookie.txt \
                 "https://labels.stcdigitalhub.com/labels?automation=$GITHUB_RUN_ID")
-              if [ "$route_code" = "200" ]; then
-                echo "Production is serving snapshot $EXPECTED_FETCHED_AT." | tee -a deployment-check.log
+              if [ "$dashboard_code" = "200" ] && [ "$labels_code" = "200" ]; then
+                echo "Production is serving snapshot $EXPECTED_FETCHED_AT with $EXPECTED_ACTIVE active labels." | tee -a deployment-check.log
+                echo "$(TZ=Asia/Kuwait date --iso-8601=seconds) Hostinger deployment validated" >> "$AUTOMATION_LOG"
                 exit 0
               fi
             fi
             sleep 15
           done
 
-          echo "error=Hostinger did not serve snapshot $EXPECTED_FETCHED_AT within 10 minutes." >> "$GITHUB_OUTPUT"
+          echo "error=Hostinger did not serve snapshot $EXPECTED_FETCHED_AT on the live dashboard within 10 minutes." >> "$GITHUB_OUTPUT"
           exit 1
 
-      - name: Email deployment success
-        if: steps.deployment.outcome == 'success' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+      - name: Email Hostinger Deployment Completed
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
         continue-on-error: true
         env:
-          EMAIL_EVENT: Deployment
-          EMAIL_STATUS: Success
-          EMAIL_DETAILS: >-
-            Hostinger deployment completed successfully for commit ${{ steps.publish.outputs.commit }}.
-            Production is serving snapshot ${{ steps.fetch.outputs.fetched_at }} with
-            ${{ steps.fetch.outputs.active }} active labels and ${{ steps.fetch.outputs.removed }} removed labels.
-          EMAIL_ATTACHMENTS: deployment-check.log
+          EMAIL_EVENT: Hostinger Deployment Completed
+          EMAIL_STATUS: ${{ steps.deployment.outcome == 'success' && 'Success' || steps.deployment.outcome == 'failure' && 'Failed' || 'Skipped' }}
+          EMAIL_DETAILS: ${{ steps.deployment.outcome == 'success' && format('Hostinger deployed commit {0}. The live dashboard is serving snapshot {1} with {2} active labels.', steps.commit.outputs.commit, steps.fetch.outputs.fetched_at, steps.fetch.outputs.active) || steps.deployment.outcome == 'failure' && (steps.deployment.outputs.error || 'Hostinger deployment or live dashboard verification failed.') || steps.gate.outputs.decision == 'skip' && steps.gate.outputs.reason || 'Hostinger deployment verification was skipped because an earlier stage failed.' }}
+          EMAIL_ATTACHMENTS: deployment-check.log,production-status.json,labels-server.log,automation.log
         run: node scripts/send-automation-email.mjs
-
-      - name: Email deployment failure
-        if: steps.deployment.outcome == 'failure' && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
-        continue-on-error: true
-        env:
-          EMAIL_EVENT: Deployment
-          EMAIL_STATUS: Failure
-          EMAIL_DETAILS: ${{ steps.deployment.outputs.error || 'The Hostinger deployment verification failed. See the attached logs.' }}
-          EMAIL_ATTACHMENTS: deployment-check.log,production-status.json,labels-server.log
-        run: node scripts/send-automation-email.mjs
-
-      - name: Stop after deployment failure
-        if: steps.deployment.outcome == 'failure'
-        run: exit 1
 
       - name: Stop labels service
         if: always()
@@ -221,3 +329,59 @@ jobs:
           if [ -f labels-server.pid ]; then
             kill "$(cat labels-server.pid)" 2>/dev/null || true
           fi
+
+      - name: Email Deployment Summary
+        id: summary
+        if: always() && env.SMTP_USERNAME != '' && env.SMTP_PASSWORD != ''
+        continue-on-error: true
+        env:
+          GATE_DECISION: ${{ steps.gate.outputs.decision }}
+          GATE_REASON: ${{ steps.gate.outputs.reason }}
+          GATE_ERROR: ${{ steps.gate.outputs.error }}
+          SERVICE_OUTCOME: ${{ steps.service.outcome }}
+          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
+          DASHBOARD_OUTCOME: ${{ steps.dashboard.outcome }}
+          COMMIT_OUTCOME: ${{ steps.commit.outcome }}
+          DEPLOYMENT_OUTCOME: ${{ steps.deployment.outcome }}
+          COMMIT_SHA: ${{ steps.commit.outputs.commit }}
+          SNAPSHOT_TIME: ${{ steps.fetch.outputs.fetched_at }}
+          ACTIVE_LABELS: ${{ steps.fetch.outputs.active }}
+          EMAIL_ATTACHMENTS: automation.log,fetch-response.json,dashboard-status.json,git-commit.log,deployment-check.log,production-status.json,labels-server.log,kuwait-holidays.ics
+        run: |
+          if [ "$GATE_DECISION" = "skip" ]; then
+            status="Skipped"
+            details="Deployment skipped before data fetch. $GATE_REASON"
+          elif [ "$DEPLOYMENT_OUTCOME" = "success" ]; then
+            status="Success"
+            details="All stages completed successfully. Commit: $COMMIT_SHA; Snapshot: $SNAPSHOT_TIME; Active labels: $ACTIVE_LABELS."
+          else
+            status="Failed"
+            details="Deployment stopped after a failed stage. Holiday gate: ${GATE_ERROR:-$GATE_DECISION}; Service: $SERVICE_OUTCOME; Fetch: $FETCH_OUTCOME; Dashboard: $DASHBOARD_OUTCOME; GitHub: $COMMIT_OUTCOME; Hostinger: $DEPLOYMENT_OUTCOME."
+          fi
+          EMAIL_EVENT="Deployment Summary" EMAIL_STATUS="$status" EMAIL_DETAILS="$details" node scripts/send-automation-email.mjs
+
+      - name: Upload deployment audit logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: labels-deployment-audit-${{ github.run_id }}
+          if-no-files-found: ignore
+          retention-days: 90
+          path: |
+            automation.log
+            kuwait-holidays.ics
+            fetch-response.json
+            dashboard-status.json
+            git-commit.log
+            deployment-check.log
+            production-status.json
+            labels-server.log
+
+      - name: Fail workflow after summary
+        if: >-
+          always() && steps.gate.outputs.decision != 'skip' &&
+          (steps.config.outcome == 'failure' || steps.gate.outcome == 'failure' ||
+          steps.service.outcome == 'failure' || steps.fetch.outcome == 'failure' ||
+          steps.dashboard.outcome == 'failure' || steps.commit.outcome == 'failure' ||
+          steps.deployment.outcome == 'failure' || steps.summary.outcome == 'failure')
+        run: exit 1

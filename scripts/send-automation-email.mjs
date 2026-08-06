@@ -8,6 +8,11 @@ const eventName = process.env.EMAIL_EVENT || "Automation";
 const status = process.env.EMAIL_STATUS || "Status";
 const details =
   process.env.EMAIL_DETAILS || "No additional details were provided.";
+const timestamp = new Date().toLocaleString("en-GB", {
+  timeZone: "Asia/Kuwait",
+  timeZoneName: "short",
+});
+const automationLog = process.env.AUTOMATION_LOG || "automation.log";
 
 if (!smtpUsername || !smtpPassword) {
   throw new Error(
@@ -35,22 +40,30 @@ const runUrl =
     ? `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : "Not available";
 
-await transporter.sendMail({
-  from: `AK stc Labels Automation <${smtpUsername}>`,
-  to: recipient,
-  subject: `[AK stc Labels] ${eventName} - ${status}`,
-  text: [
-    `Event: ${eventName}`,
-    `Status: ${status}`,
-    `Time: ${new Date().toLocaleString("en-GB", { timeZone: "Asia/Kuwait" })} Kuwait time`,
-    "",
-    details,
-    "",
-    `GitHub Actions run: ${runUrl}`,
-    "Production: https://labels.stcdigitalhub.com/labels",
-  ].join("\n"),
-  attachments: attachmentPaths.map((filePath) => ({
-    filename: filePath.split(/[\\/]/).pop(),
-    path: filePath,
-  })),
-});
+fs.appendFileSync(automationLog, `${timestamp} | ${eventName} | ${status} | ${details}\n`);
+
+try {
+  await transporter.sendMail({
+    from: `AK stc Labels Automation <${smtpUsername}>`,
+    to: recipient,
+    subject: `[AK stc Labels] ${eventName} - ${status}`,
+    text: [
+      `Event: ${eventName}`,
+      `Status: ${status}`,
+      `Time: ${timestamp}`,
+      "",
+      details,
+      "",
+      `GitHub Actions run: ${runUrl}`,
+      "Production: https://labels.stcdigitalhub.com/labels",
+    ].join("\n"),
+    attachments: attachmentPaths.map((filePath) => ({
+      filename: filePath.split(/[\\/]/).pop(),
+      path: filePath,
+    })),
+  });
+  fs.appendFileSync(automationLog, `${timestamp} | ${eventName} email delivery | Success\n`);
+} catch (error) {
+  fs.appendFileSync(automationLog, `${timestamp} | ${eventName} email delivery | Failed | ${error.message}\n`);
+  throw error;
+}
