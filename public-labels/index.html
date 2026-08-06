@@ -57,6 +57,24 @@
             <button class="metric removed metric-link" data-nav-card="labels-removed" type="button"><span>Removed Labels</span><strong id="statRemoved">0</strong><small id="statRemovedPct">0% of total</small></button>
             <article class="metric issues"><span>Language Issues</span><strong id="statIssues">0</strong><small id="statIssuesPct">0% of total</small></article>
           </div>
+
+          <section class="dashboard-preview table-card">
+            <div class="dashboard-preview-head">
+              <div>
+                <h2>New Labels</h2>
+                <p>A quick view of labels introduced in the latest comparison.</p>
+              </div>
+              <a class="preview-more" href="/labels/new">View more</a>
+            </div>
+            <div class="table-wrap">
+              <table class="dashboard-preview-table">
+                <thead>
+                  <tr><th>Feature Key</th><th>Label Key</th><th>English Text</th><th>Arabic Text</th><th>First Seen</th></tr>
+                </thead>
+                <tbody id="dashboardNewLabels"><tr><td colspan="5" class="empty-row">Loading new labels...</td></tr></tbody>
+              </table>
+            </div>
+          </section>
         </section>
 
         <section id="labelsPage" class="page labels-page">

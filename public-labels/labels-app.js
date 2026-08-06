@@ -80,6 +80,7 @@ const els = {
     removedPct: $("statRemovedPct"),
     issuesPct: $("statIssuesPct"),
   },
+  dashboardNewLabels: $("dashboardNewLabels"),
   snapshotList: $("snapshotList"),
   globalSearch: $("globalSearch"),
   featureKeySearch: $("featureKeySearch"),
@@ -341,6 +342,17 @@ function renderTable() {
   els.pageNumber.textContent = state.page;
   els.prevPage.disabled = state.page <= 1;
   els.nextPage.disabled = state.page * state.pageSize >= state.total;
+}
+
+function renderDashboardNewLabels(rows = []) {
+  els.dashboardNewLabels.innerHTML = rows.length ? rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.featureKey)}</td>
+      <td>${escapeHtml(row.labelKey)}</td>
+      <td class="text-cell">${escapeHtml(row.englishText)}</td>
+      <td class="text-cell rtl">${escapeHtml(row.arabicText)}</td>
+      <td>${formatDate(row.firstSeenAt)}</td>
+    </tr>`).join("") : `<tr><td colspan="5" class="empty-row">No new labels found.</td></tr>`;
 }
 
 function renderSidePanels(totals = {}) {
@@ -680,9 +692,13 @@ async function loadHistory() {
 }
 
 async function loadStatus() {
-  const status = await api("/api/status");
+  const [status, newLabels] = await Promise.all([
+    api("/api/status"),
+    api("/api/labels?changeType=New&page=1&pageSize=5"),
+  ]);
   renderHistoryConnection(status);
   renderStats(status.totals || {});
+  renderDashboardNewLabels(newLabels.rows || []);
   renderOptions(status.options || {});
   renderSnapshots(status.snapshots || []);
   renderSidePanels(status.totals || {});
